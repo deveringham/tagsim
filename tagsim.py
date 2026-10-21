@@ -368,10 +368,16 @@ def render(tags, cam, T_world_cam, deg: Degradation, rng, ss=2):
 # ----------------------------------------------------------------------------
 # Detection + pose estimation (this part runs unchanged on the real robot)
 # ----------------------------------------------------------------------------
-def make_detector():
+def make_detector(cam=None):
+    """ArUco detector.  OpenCV's minimum marker size is a fraction of the
+    image size (perimeter >= 3 % of the larger side); given a camera that is
+    not 640 px wide, it is rescaled to the same ~19 px perimeter as at 640,
+    so higher resolutions are not handicapped (tune this on the robot)."""
     p = cv2.aruco.DetectorParameters()
     p.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
     p.cornerRefinementWinSize = 3
+    if cam is not None and max(cam.width, cam.height) != 640:
+        p.minMarkerPerimeterRate = 0.03 * 640 / max(cam.width, cam.height)
     return cv2.aruco.ArucoDetector(ARUCO_DICT, p)
 
 
@@ -604,7 +610,7 @@ def measure(true_pose, tags, cam, deg, rng, detector=None,
     cube     : optional Cube placed in the scene; its pose is estimated
                relative to the robot ("pnp", and "floor" if cube_floor) and,
                when wall tags give a robot fix, in the world."""
-    detector = detector or make_detector()
+    detector = detector or make_detector(cam)
     tag_map = {t.id: t for t in (map_tags or tags)}
     if cube is not None:
         tag_map.update({t.id: t for t in cube.model()})

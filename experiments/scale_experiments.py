@@ -27,6 +27,7 @@ S2. Reaching spots for every room size x landmark size (random drifting
     break follow distance / size, or distance beyond the fix reach?
 """
 import sys, os, json, time, argparse
+from dataclasses import replace
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -76,10 +77,11 @@ def wall_tag_height(side):
     return 0.125 + side / 2
 
 
-def scale_scene(kind, room, size, rng):
-    """Scene dict as nav_experiments.make_scene, for any room and size."""
+def scale_scene(kind, room, size, rng, cam=None):
+    """Scene dict as nav_experiments.make_scene, for any room and size
+    (and camera, default 640 x 480)."""
     W, D = room
-    cam = Camera()
+    cam = cam or Camera()
     K_est = perturb_intrinsics(cam.K, rng, 0.01, 3.0)
     cube = None
     if kind == "cube":
@@ -110,9 +112,12 @@ def landmark_dist(kind, sc, p):
 # S1. Fix quality vs distance and size
 # ---------------------------------------------------------------------------
 def _fix_sweep(args):
-    kind, size, photos = args
+    """args: kind, size, photos[, (width, height)[, blur_sigma_px]]"""
+    kind, size, photos, *more = args
+    wh, blur = (list(more) + [None, None])[:2]
     rng = np.random.default_rng([11, int(1000 * size), kind == "cube"])
-    cam = Camera()
+    cam = Camera(width=wh[0], height=wh[1]) if wh else Camera()
+    deg = N.STAND if blur is None else replace(N.STAND, blur_sigma=blur)
     K_est = perturb_intrinsics(cam.K, rng, 0.01, 3.0)
     if kind == "cube":
         tags = Cube(make_T(rot_z(np.radians(20)), [0, 0, size / 2]), size,
@@ -120,7 +125,7 @@ def _fix_sweep(args):
     else:
         tags = [Tag(0, np.array([0, 0, wall_tag_height(size)]),
                     np.array([0, 1.0, 0]), size)]
-    det = make_detector()
+    det = make_detector(cam)
     out = {k: [] for k in ("detect", "median", "p90", "flip")}
     for d in DISTS:
         hit, pos, yaw = 0, [], []
@@ -130,7 +135,7 @@ def _fix_sweep(args):
             p = (-d * np.cos(a), -d * np.sin(a)) if kind == "cube" else \
                 (d * np.sin(a), d * np.cos(a))
             face = np.arctan2(-p[1], -p[0]) + np.radians(rng.uniform(-10, 10))
-            r = measure((p[0], p[1], face), tags, cam, N.STAND, rng, detector=det,
+            r = measure((p[0], p[1], face), tags, cam, deg, rng, detector=det,
                         K_est=K_est)
             if r.n_tags:
                 hit += 1
@@ -220,10 +225,12 @@ def plot_S1(res):
 # S2. Reaching spots across room size x landmark size
 # ---------------------------------------------------------------------------
 def _nav_run(args):
-    kind, W, size, seed, n_goals = args
+    """args: kind, W, size, seed, n_goals[, (width, height)]"""
+    kind, W, size, seed, n_goals, *more = args
+    cam = Camera(width=more[0][0], height=more[0][1]) if more else None
     D = ASPECT * W
     rng = np.random.default_rng([seed, int(10 * W), int(1000 * size)])
-    sc = scale_scene(kind, (W, D), size, np.random.default_rng(500 + seed))
+    sc = scale_scene(kind, (W, D), size, np.random.default_rng(500 + seed), cam)
     motors = random_motors(np.random.default_rng(600 + seed))
     drift_rng = np.random.default_rng(700 + seed)
     centre = np.array([W / 2, D / 2])
@@ -235,7 +242,8 @@ def _nav_run(args):
         nav_kw={"look_only_in_range": True}, start=START)
     for g, r in zip(goals, records):
         r["landmark_dist_m"] = landmark_dist(kind, sc, g)
-    return {"kind": kind, "W": W, "size": size, "seed": seed, "goals": records}
+    return {"kind": kind, "W": W, "size": size, "seed": seed, "goals": records,
+            "camera": [sc["cam"].width, sc["cam"].height]}
 
 
 def experiment_S2(S1, seeds=5, n_goals=10):

@@ -579,27 +579,37 @@ def goal_sequence(rng, n, W, D, margin=0.4, clear=0.35, centre=CUBE_CENTRE,
     return goals
 
 
+def goal_scene(setup, seed, n_goals):
+    """Everything one experiment-3 run uses (scene, spots, robot, random
+    generators).  The first k spots do not depend on n_goals."""
+    sc = make_scene(setup, np.random.default_rng(500 + seed))
+    return {"rng": np.random.default_rng(seed),             # images, slip
+            "sc": sc,
+            "motors": random_motors(np.random.default_rng(600 + seed)),
+            "drift_rng": np.random.default_rng(700 + seed),
+            "goals": goal_sequence(np.random.default_rng(800 + seed), n_goals,
+                                   sc["W"], sc["D"])}
+
+
 def goal_run(args):
     setup, cal, seed, n_goals, max_steps = args
-    rng = np.random.default_rng(seed)             # images, slip
-    sc = make_scene(setup, np.random.default_rng(500 + seed))
-    motors = random_motors(np.random.default_rng(600 + seed))
-    drift_rng = np.random.default_rng(700 + seed)
-    goals = goal_sequence(np.random.default_rng(800 + seed), n_goals,
-                          sc["W"], sc["D"])
-    records, path, ekf = run_goals(sc, goals, motors, cal, rng, drift_rng, max_steps)
+    g = goal_scene(setup, seed, n_goals)
+    sc, motors, goals = g["sc"], g["motors"], g["goals"]
+    records, path, ekf = run_goals(sc, goals, motors, cal, g["rng"], g["drift_rng"],
+                                   max_steps)
     return {"setup": setup, "cal": cal, "seed": seed, "goals": records,
             "path": path, "goal_xy": np.array(goals),
             "bias_true": motors.biases, "bias_est": ekf.biases}
 
 
 def run_goals(sc, goals, motors, cal, rng, drift_rng, max_steps, nav_kw=None,
-              start=START):
+              start=START, on_step=None):
     """Send the robot to each goal in turn (Navigator + OdometryEKF), taking
     a photo after every step.  max_steps: per goal, an int or a function of
-    the straight-line distance to the goal.  Returns per-goal records, the
-    true path and the filter."""
-    det = make_detector()
+    the straight-line distance to the goal.  on_step(info) is called after
+    every step (for videos; it must not use rng).  Returns per-goal
+    records, the true path and the filter."""
+    det = make_detector(sc["cam"])
     ekf = OdometryEKF(start, calibrate=cal)
     nav = Navigator(sc["landmarks"], **(nav_kw or {}))
     x_true, fixed = np.array(start, float), False
@@ -615,15 +625,25 @@ def run_goals(sc, goals, motors, cal, rng, drift_rng, max_steps, nav_kw=None,
             if cmd is None or steps >= limit:
                 break
             fwd, turn = cmd
+            prev = {"true": x_true.copy(), "est": ekf.pose.copy()}
             x_true = motors.move(x_true, fwd, turn, rng, drift_rng)
             x_true[:2] = np.clip(x_true[:2], 0.25, [sc["W"] - 0.25, sc["D"] - 0.25])
             ekf.predict(fwd, turn)
-            r = measure(tuple(x_true), sc["tags"], sc["cam"], STAND, rng,
-                        detector=det, K_est=sc["K_est"], map_tags=sc["map_tags"])
+            r, img, dets = measure(tuple(x_true), sc["tags"], sc["cam"], STAND, rng,
+                                   detector=det, K_est=sc["K_est"],
+                                   map_tags=sc["map_tags"], return_image=True)
             fixed = r.n_tags > 0 and ekf.update(np.array(r.est["floor"]),
                                                 fix_cov(r.nearest_dist))
             steps += 1
             path.append(x_true.copy())
+            if on_step is not None:
+                on_step({"goal_index": len(records), "goal": g, "prev": prev,
+                         "true": x_true.copy(), "est": ekf.pose.copy(),
+                         "P": ekf.P[:2, :2].copy(), "pos_sd": ekf.pos_sd,
+                         "cmd": (fwd, turn), "mode": nav.mode,
+                         "target": getattr(nav, "target", None),
+                         "image": img, "dets": dets, "result": r, "fixed": fixed,
+                         "look_sd": nav.look_sd})
         records.append({
             "err_m": float(np.linalg.norm(x_true[:2] - g)),
             "arrived": cmd is None, "steps": steps,

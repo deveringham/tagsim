@@ -1,5 +1,17 @@
 """
-make_video.py - videos of one simulated run (the experiment C trajectory)
+make_video.py - videos of one simulated run
+
+  --run loop  (default) the experiment C trajectory, as below.
+  --run goals one experiment-3 run (nav_experiments): the robot walking to
+              spots with few landmarks, turning to look when its position
+              uncertainty passes the threshold.  Writes goals_<setup>.mp4
+              (1600 x 900): camera, map with the uncertainty ellipse, and
+              uncertainty / true error over time.  Replays the first
+              --goals spots of that run exactly.
+              Options: --setup "1 cube (10 cm)", --seed 0, --goals 6,
+              --ignore-biases (default: biases learned online).
+
+For --run loop:
 
   python3 -m experiments.make_video [out_dir] [--steps 240] [--substeps 3] [--hold 2] [--fps 24]
   (from the repo root; default output: results/videos)
@@ -19,17 +31,18 @@ Each step of the run becomes:
 The run itself is identical to experiment C: rendering the in-between
 frames uses its own random generator.
 """
-import sys, os, argparse, subprocess, time
+import sys, os, argparse, subprocess, time, re
 import numpy as np
 import cv2
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.patches import Polygon, Rectangle
+from matplotlib.patches import Polygon, Rectangle, Ellipse
 from matplotlib.lines import Line2D
 from matplotlib.collections import LineCollection
 
 from tagsim import render, robot_T, wrap, Degradation
+import experiments.nav_experiments as NX
 from experiments.run_experiments import (simulate_run, plain_log, INK, INK2, MUTED, GRID,
                              AXIS, SURF, C)
 
@@ -293,6 +306,262 @@ def fmt_pose(name, p, truth=None):
     return s
 
 
+# ---------------------------------------------------------------------------
+# --run goals: walking to spots with active looking
+# ---------------------------------------------------------------------------
+MODE_TEXT = {"look": "TURNING TO LOOK", "search": "SEARCHING (full turn)"}
+
+
+class NavFigure:
+    """Camera (left), map (right top), uncertainty vs time (right bottom)."""
+
+    def __init__(self, sc, goals, total_steps, look_sd):
+        self.sc, self.look_sd = sc, look_sd
+        W, D = sc["W"], sc["D"]
+        self.fig = fig = plt.figure(figsize=(FIG_W / 100, FIG_H / 100), dpi=100,
+                                    facecolor=SURF)
+        px = lambda x, y, w, h: [x / FIG_W, 1 - (y + h) / FIG_H, w / FIG_W, h / FIG_H]
+        cam = sc["cam"]
+        fig.text(20 / FIG_W, 1 - 40 / FIG_H,
+                 f"Robot camera (simulated, {cam.width} x {cam.height})",
+                 color=INK, fontsize=14, fontweight="bold", va="bottom")
+        self.ax_cam = fig.add_axes(px(20, 52, 720, 540))
+        self.ax_cam.set_axis_off()
+        self.im = self.ax_cam.imshow(np.zeros((cam.height, cam.width, 3), np.uint8),
+                                     interpolation="bilinear")
+        self.status_title = fig.text(20 / FIG_W, 1 - 625 / FIG_H, "", color=INK,
+                                     fontsize=14, fontweight="bold")
+        self.status = fig.text(20 / FIG_W, 1 - 650 / FIG_H, "", color=INK2,
+                               fontsize=11, family="DejaVu Sans Mono", va="top",
+                               linespacing=1.6)
+
+        ax = self.ax_map = fig.add_axes(px(SPLIT_X + 70, 52, 740, 430))
+        self._style(ax)
+        ax.set_aspect("equal")
+        ax.set_xlim(-0.3, W + 0.3)
+        ax.set_ylim(-0.3, D + 0.3)
+        ax.set_xlabel("x (m)", color=INK2, fontsize=10)
+        ax.set_ylabel("y (m)", color=INK2, fontsize=10)
+        ax.set_title("Where the robot is, and where it thinks it is", loc="left",
+                     color=INK, fontsize=14, fontweight="bold", pad=10)
+        ax.add_patch(Rectangle((0, 0), W, D, fill=False, ec=AXIS, lw=1.5))
+        NX.draw_landmarks(ax, sc)
+        g = np.array(goals)
+        ax.plot(g[:, 0], g[:, 1], "x", color=MUTED, ms=7, mew=1.5, zorder=2)
+        self.goal = ax.plot([], [], "x", color=INK, ms=11, mew=2.5, zorder=6)[0]
+        self.goal_txt = [ax.text(x, y, "", fontsize=9, color=INK2, zorder=6)
+                         for x, y in g]
+        self.fov = Polygon(np.zeros((3, 2)), closed=True, fc=INK, alpha=0.07,
+                           ec="none", zorder=1)
+        ax.add_patch(self.fov)
+        self.sight = ax.plot([], [], color=BLUE, lw=1, alpha=0.7, zorder=2)[0]
+        self.l_true = ax.plot([], [], color=INK, lw=1.5, zorder=3)[0]
+        self.l_est = ax.plot([], [], color=BLUE, lw=1.5, ls="--", zorder=4)[0]
+        self.ell = Ellipse((0, 0), 0, 0, fc=BLUE, alpha=0.18, ec=BLUE, lw=1, zorder=5)
+        ax.add_patch(self.ell)
+        self.r_est = Polygon(np.zeros((3, 2)), fc="none", ec=BLUE, lw=2, zorder=7)
+        self.r_true = Polygon(np.zeros((3, 2)), fc=INK, ec=SURF, lw=1, zorder=8)
+        ax.add_patch(self.r_est)
+        ax.add_patch(self.r_true)
+        handles = [Line2D([], [], color=INK, lw=1.5, label="True path"),
+                   Line2D([], [], color=BLUE, lw=1.5, ls="--", label="Estimated path"),
+                   Line2D([], [], marker="o", ls="", color=BLUE, alpha=0.35, ms=9,
+                          label="Uncertainty (2 sd)"),
+                   Line2D([], [], marker="x", ls="", color=INK, ms=9, mew=2,
+                          label="Current spot (numbers: arrival error, cm)")]
+        ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.11),
+                  ncol=2, fontsize=9, frameon=False, labelcolor=INK2)
+
+        ax = self.ax_sd = fig.add_axes(px(SPLIT_X + 70, 655, 740, 185))
+        self._style(ax)
+        ax.set_xlim(0, total_steps + 1)
+        ax.set_ylim(0, 30)
+        ax.set_xlabel("Step", color=INK2, fontsize=10)
+        ax.set_ylabel("cm", color=INK2, fontsize=10)
+        ax.set_title("Position uncertainty vs true error", loc="left", color=INK,
+                     fontsize=14, fontweight="bold", pad=10)
+        ax.axhline(100 * look_sd, color=ORANGE, lw=1.2, ls="--")
+        ax.text(total_steps, 100 * look_sd, "look threshold ", color=ORANGE,
+                fontsize=9, ha="right", va="bottom")
+        self.l_sd = ax.plot([], [], color=BLUE, lw=2, label="Uncertainty (1 sd)")[0]
+        self.l_err = ax.plot([], [], color=INK, lw=1.5, label="True error")[0]
+        ax.legend(loc="lower right", bbox_to_anchor=(1.0, 1.0), ncol=2, fontsize=9,
+                  frameon=False, labelcolor=INK2)
+        self.spans = []
+
+    @staticmethod
+    def _style(ax):
+        ax.set_facecolor(SURF)
+        for side in ("top", "right"):
+            ax.spines[side].set_visible(False)
+        for side in ("left", "bottom"):
+            ax.spines[side].set_color(AXIS)
+        ax.tick_params(colors=MUTED, labelsize=9)
+        ax.grid(color=GRID, lw=0.6)
+
+    def mark_look(self, k):
+        """Shade step k of the time plot as spent looking / searching."""
+        self.spans.append(self.ax_sd.axvspan(k - 0.5, k + 0.5, color=ORANGE,
+                                             alpha=0.15, lw=0, zorder=0))
+
+    def draw(self, cam_bgr, st):
+        self.im.set_data(cam_bgr[:, :, ::-1])
+        self.status_title.set_text(st["title"])
+        self.status.set_text(st["status"])
+        t, e = st["true"], st["est"]
+        self.fov.set_xy(fov_poly(t, self.sc["cam"].hfov_deg))
+        self.goal.set_data([st["goal"][0]], [st["goal"][1]])
+        for i, err in st["arrivals"].items():
+            self.goal_txt[i].set_position(st["goals"][i] + np.array([0.05, 0.05]))
+            self.goal_txt[i].set_text(f"{err:.0f}")
+        self.l_true.set_data(*st["path_true"][:, :2].T)
+        self.l_est.set_data(*st["path_est"][:, :2].T)
+        vals, vecs = np.linalg.eigh(st["P"])
+        self.ell.set_center(e[:2])
+        self.ell.set_width(4 * np.sqrt(max(vals[1], 0)))
+        self.ell.set_height(4 * np.sqrt(max(vals[0], 0)))
+        self.ell.set_angle(np.degrees(np.arctan2(vecs[1, 1], vecs[0, 1])))
+        self.r_true.set_xy(robot_poly(t))
+        self.r_est.set_xy(robot_poly(e, 1.6))
+        if st["sight"] is not None:
+            self.sight.set_data([t[0], st["sight"][0]], [t[1], st["sight"][1]])
+        else:
+            self.sight.set_data([], [])
+        h = st["history"]
+        if len(h):
+            self.l_sd.set_data(h[:, 0], 100 * h[:, 1])
+            self.l_err.set_data(h[:, 0], 100 * h[:, 2])
+        self.fig.canvas.draw()
+        rgba = np.asarray(self.fig.canvas.buffer_rgba())
+        return np.ascontiguousarray(rgba[:, :, 2::-1])
+
+
+def main_goals(a):
+    cal = not a.ignore_biases
+    max_steps = 200
+    g = NX.goal_scene(a.setup, a.seed, a.goals)
+    # Dry run for the step count (same generators -> same run), then replay.
+    dry = NX.goal_scene(a.setup, a.seed, a.goals)
+    recs, _, _ = NX.run_goals(dry["sc"], dry["goals"], dry["motors"], cal, dry["rng"],
+                              dry["drift_rng"], max_steps)
+    total = sum(r["steps"] for r in recs)
+    sc, goals = g["sc"], [np.asarray(x) for x in g["goals"]]
+    cam = sc["cam"]
+    nav_tmp = NX.Navigator(sc["landmarks"])
+    fig = NavFigure(sc, goals, total, nav_tmp.look_sd)
+    rng_vis = np.random.default_rng(99)
+    walk_deg = Degradation(motion_px=4.0)
+    slug = re.sub(r"[^a-z0-9]+", "_", a.setup.lower()).strip("_")
+    path = os.path.join(a.out, f"goals_{slug}_{'learned' if cal else 'ignored'}.mp4")
+    w = VideoWriter(path, FIG_W, FIG_H, a.fps)
+    state = {"k": 0, "path_true": [np.array(NX.START)], "path_est": [np.array(NX.START)],
+             "history": [], "arrivals": {}, "last_goal": 0, "frame": 0,
+             "landmark_xy": [l.xy for l in sc["landmarks"]]}
+    t0 = time.time()
+
+    def emit(gray, dets, true, est, P, title, status, info, sight):
+        st = {"true": true, "est": est, "P": P, "goal": info["goal"],
+              "goals": goals, "arrivals": state["arrivals"],
+              "path_true": np.array(state["path_true"] + [true]),
+              "path_est": np.array(state["path_est"] + [est]),
+              "history": np.array(state["history"]), "title": title,
+              "status": status, "sight": sight}
+        frame = fig.draw(annotate_camera(gray, dets, cam), st)
+        w.write(frame)
+        if state["frame"] in a.preview:
+            cv2.imwrite(os.path.join(a.out, f"goals_preview_{state['frame']:05d}.png"),
+                        frame)
+        state["frame"] += 1
+
+    def on_step(info):
+        k = state["k"] = state["k"] + 1
+        gi = info["goal_index"]
+        if gi != state["last_goal"]:                 # previous spot reached
+            prev_goal = goals[state["last_goal"]]
+            state["arrivals"][state["last_goal"]] = 100 * np.linalg.norm(
+                state["path_true"][-1][:2] - prev_goal)
+            state["last_goal"] = gi
+        fwd, turn = info["cmd"]
+        mode = info["mode"]
+        if mode in MODE_TEXT:
+            what = MODE_TEXT[mode]
+            fig.mark_look(k)
+        elif fwd > 0:
+            what = "WALKING TO THE SPOT"
+        else:
+            what = "TURNING TOWARDS THE SPOT"
+        spot = f"Spot {gi + 1} / {len(goals)}"
+        target = info["target"].xy if mode in MODE_TEXT and info["target"] is not None \
+            else None
+        sd_before = state["history"][-1][1] if state["history"] else 0.0
+        cmd_txt = (f"walk {100 * fwd:.0f} cm, " if fwd > 0 else "") + \
+            f"turn {np.degrees(turn):+.0f} deg"
+        # Moving frames: camera between the poses, estimate = prediction.
+        for i in range(1, a.substeps + 1):
+            tt = i / (a.substeps + 1)
+            true = interp(info["prev"]["true"], info["true"], tt)
+            est = interp(info["prev"]["est"], info["est"], tt)
+            roll = np.radians(rng_vis.normal(0, walk_deg.bob_roll_deg))
+            pitch = np.radians(rng_vis.normal(0, walk_deg.bob_pitch_deg))
+            dz = rng_vis.normal(0, walk_deg.bob_dz_m)
+            img = render(sc["tags"], cam, robot_T(*true) @ cam.T_robot_cam(roll, pitch, dz),
+                         walk_deg, rng_vis)
+            status = "\n".join([
+                f"Command: {cmd_txt}",
+                f"Position uncertainty  {100 * sd_before:4.1f} cm  "
+                f"(looks above {100 * info['look_sd']:.0f} cm)",
+                "",
+                "Moving: the estimate follows the motor command",
+                "(with the learned motor biases)" if cal else
+                "(motor biases ignored)"])
+            emit(img, [], true, est, info["P"], f"{spot}  -  {what}", status, info,
+                 target)
+        # Photo frames: the image the run used, and the result.
+        r = info["result"]
+        if info["fixed"]:
+            verdict = f"{r.n_tags} tag{'s' * (r.n_tags > 1)} seen - fix accepted"
+        elif r.n_tags:
+            verdict = "tag seen - fix rejected as an outlier"
+        else:
+            verdict = "no tag in view"
+        state["path_true"].append(info["true"].copy())
+        state["path_est"].append(info["est"].copy())
+        err = np.linalg.norm(info["true"][:2] - info["est"][:2])
+        state["history"].append((k, info["pos_sd"], err))
+        status = "\n".join([
+            f"Command: {cmd_txt}",
+            f"Photo: {verdict}",
+            f"Position uncertainty  {100 * info['pos_sd']:4.1f} cm  "
+            f"(looks above {100 * info['look_sd']:.0f} cm)",
+            f"True position error   {100 * err:4.1f} cm",
+            f"Distance to spot      {100 * np.linalg.norm(info['goal'] - info['est'][:2]):4.0f} cm"
+            " (estimated)"])
+        for _ in range(a.hold):
+            emit(info["image"], info["dets"], info["true"], info["est"], info["P"],
+                 f"{spot}  -  {what}", status, info, target)
+        state["last"] = info
+        if k % 50 == 0:
+            print(f"  step {k}/{total}  ({state['frame']} frames, "
+                  f"{time.time() - t0:.0f} s)", flush=True)
+
+    recs, _, _ = NX.run_goals(sc, g["goals"], g["motors"], cal, g["rng"],
+                              g["drift_rng"], max_steps, on_step=on_step)
+    # Closing frames: every spot's result.
+    state["arrivals"][len(goals) - 1] = 100 * recs[-1]["err_m"]
+    last = state["last"]
+    summary = "\n".join(f"Spot {i + 1}: {100 * r['err_m']:4.1f} cm off, {r['steps']:3d} "
+                         f"steps, {r['looks']} look(s)" for i, r in enumerate(recs))
+    for _ in range(3 * a.fps):
+        emit(last["image"], last["dets"], last["true"], last["est"], last["P"],
+             "All spots visited", summary, last, None)
+    w.close()
+    print(f"wrote {state['frame']} frames ({state['frame'] / a.fps:.0f} s at "
+          f"{a.fps} fps) to {path} in {time.time() - t0:.0f} s")
+    for i, r in enumerate(recs):
+        print(f"  spot {i + 1}: {100 * r['err_m']:.1f} cm, {r['steps']} steps, "
+              f"{r['looks']} looks, {r['searches']} searches")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out", nargs="?", default="results/videos")
@@ -302,8 +571,16 @@ def main():
     ap.add_argument("--fps", type=int, default=24)
     ap.add_argument("--preview", type=int, nargs="*", default=[],
                     help="also save PNGs of these combined-video frame numbers")
+    ap.add_argument("--run", choices=("loop", "goals"), default="loop")
+    ap.add_argument("--setup", default="1 cube (10 cm)",
+                    help=f"--run goals: one of {list(NX.SETUPS)}")
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--goals", type=int, default=6)
+    ap.add_argument("--ignore-biases", action="store_true")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
+    if a.run == "goals":
+        return main_goals(a)
 
     # Run the simulation once without recording to get the scene, then
     # replay it with the recorder (same seed -> same run).

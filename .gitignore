@@ -13,4 +13,4 @@ env/
 .DS_Store
 
 # make_video.py --preview frames
-results/videos/preview_*.png
+results/videos/*preview_*.png

@@ -30,12 +30,15 @@ experiments/
   cube_experiments.py  D-E: locating the tagged cube
   nav_experiments.py   K, 1, 2, 2b, 3: navigation with few tags
   scale_experiments.py S1, S2: room size vs landmark size
-  make_video.py        videos of the experiment C run
+  resolution_experiments.py R1, R2: camera resolution
+  make_video.py        videos of the experiment C run, or of a
+                       spot-reaching run (--run goals)
 results/
   localization/        figures + results.json from run_experiments
   cube/                figures + cube_results.json from cube_experiments
   navigation/          figures + nav_results.json from nav_experiments
   scale/               figures + scale_results.json from scale_experiments
+  resolution/          figures + resolution_results.json
   videos/              MP4s from make_video
 ```
 
@@ -60,7 +63,9 @@ fixed random seed per experiment.
 | `python3 -m experiments.cube_experiments` | D: cube pose from single photos, D2: variations, E: cube location consistency while the robot moves | ~4 min | `results/cube` |
 | `python3 -m experiments.nav_experiments [--workers N] [--only K 1 2 2b 3]` | K: online calibration on runs C/E; 1: fix-quality maps; 2/2b: walking blind; 3: reaching spots with 1-18 landmarks | ~20 min on 14 cores | `results/navigation` |
 | `python3 -m experiments.scale_experiments [--workers N] [--only S1 S2]` | S1: fix quality vs distance for landmark sizes; S2: reaching spots for every room size x landmark size | ~10 min on 14 cores | `results/scale` |
+| `python3 -m experiments.resolution_experiments [--workers N] [--only R1 R2]` | R1: fix quality vs distance at 320x240 to 1920x1440; R2: reaching spots with one 10 cm cube, rooms 4-12 m, at each resolution | ~20 min on 14 cores | `results/resolution` |
 | `python3 -m experiments.make_video` | camera view, animated map, and both side by side for the C run | ~2 min | `results/videos` |
+| `python3 -m experiments.make_video --run goals [--setup "1 cube (10 cm)"] [--seed 0] [--goals 6] [--ignore-biases]` | one experiment-3 run: camera, map with uncertainty ellipse, uncertainty vs the look threshold over time | ~5 min | `results/videos` |
 
 \* Rough times from the development machine.
 
@@ -108,6 +113,10 @@ tag, corners TL, TR, BR, BL. Cube origin at its centre, face k carries tag
   `s = 0.82`, `k = 0.9`, `c = 1.5 deg/step`. `s`, `k` and `c` can also drift
   as a slow random walk.
 - **Cube:** 10 cm, with 7 cm tags (ids 100-105), lying on a random face.
+- **Camera resolution is configurable:** `Camera(width, height, hfov_deg)`.
+  `make_detector(cam)` keeps OpenCV's minimum marker size at the same pixel
+  size as at 640 px wide; OpenCV's default is a fraction of the image, which
+  would hold back high resolutions.
 - **Sizes are configurable:**
   - `make_arena(width, depth, tag_size, tag_height, spacing)`
   - `realistic_setup(room=..., tag_size=..., tag_height=...)`
@@ -234,6 +243,32 @@ The landmark is either one cube in the middle (6-40 cm) or one tag per wall
   62 %.
 
 ![](results/scale/scale_breakdown.png)
+
+### Camera resolution (`results/resolution`)
+
+Same 70 deg lens and 4:3 aspect, 320x240 to 1920x1440.
+
+- **Detection range is proportional to resolution.** For the 10 cm cube it
+  goes from 0.9 m at 320 px wide to 5.6 m at 1920 px.
+- **The reach of a 10 cm fix grows more slowly:** 0.9, 1.4, 1.7, 1.7 and
+  2.8 m from 320 to 1920 px wide. Three times the pixels gives about twice
+  the reach. At 1920 x 1440, a 10 cm cube reaches about as far as a 25 cm
+  cube at 640 x 480.
+- **Close up, resolution doesn't help.** Within about 1 m, errors are a few
+  mm at every resolution. They are limited by the camera calibration (1 %
+  focal-length error, so about 1 % of distance), not by pixels.
+- **The lens must keep up.** If the blur is fixed in angle rather than in
+  pixels, more pixels add almost nothing: detection range stays at about
+  2.2 m.
+- **Navigation follows the reach.** In a 6 x 4.5 m room with one 10 cm cube,
+  spots within 10 cm go from 12 % at 320 px wide to 62 % at 640 and 98 % at
+  1920. In 8 x 6 m: 2 %, 28 %, 88 %. In 12 x 9 m even 1920 px reaches only
+  40 %. The per-spot breakdown follows the same "distance beyond reach"
+  curve as for landmark size.
+- **Cost:** tag detection takes 6 ms per frame at 640 x 480 and 36 ms at
+  1920 x 1440 on the development PC (one core); slower on a robot.
+
+![](results/resolution/resolution_nav.png)
 
 ## Limitations and open questions
 
