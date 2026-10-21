@@ -1,0 +1,345 @@
+"""
+run_experiments.py - accuracy experiments for tagsim.py
+
+  python3 run_experiments.py [output_dir]
+
+A. Monte Carlo over random robot poses in a 4 x 3 m arena under realistic
+   conditions (blur, noise, JPEG, body bobbing, 1 cm / 1 deg tag-placement
+   error, slightly-off camera calibration).  Error vs distance per method.
+B. Sensitivity: one factor changed at a time (tag size, spacing, motion
+   blur, calibration, map error, camera resolution).
+C. A walking trajectory with badly-calibrated motor odometry, with and
+   without tag fixes fused in a small EKF.
+Also saves an annotated example camera frame.
+"""
+import sys, os, json, time
+import numpy as np
+import cv2
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib.ticker import FuncFormatter, LogLocator
+from tagsim import *
+
+OUT = "results"          # set from the command line in __main__
+
+# Chart styling (reference data-viz palette, light mode)
+INK, INK2, MUTED, GRID, AXIS, SURF = ("#0b0b0b", "#52514e", "#898781",
+                                      "#e1e0d9", "#c3c2b7", "#fcfcfb")
+C = {"single": "#2a78d6", "multi": "#eb6834", "floor": "#1baf7a",
+     "floor_rigid": "#eda100"}
+LABEL = {"single": "One tag (IPPE)", "multi": "All tags, 6-DOF PnP",
+         "floor": "All tags + floor constraint", "floor_rigid":
+         "Floor constraint, camera assumed rigid"}
+plt.rcParams.update({
+    "font.family": "sans-serif", "font.size": 10, "axes.edgecolor": AXIS,
+    "axes.labelcolor": INK2, "xtick.color": MUTED, "ytick.color": MUTED,
+    "axes.titlecolor": INK, "axes.titleweight": "bold", "axes.titlesize": 11,
+    "figure.facecolor": SURF, "axes.facecolor": SURF, "axes.grid": True,
+    "grid.color": GRID, "grid.linewidth": 0.6, "axes.spines.top": False,
+    "axes.spines.right": False, "legend.frameon": False,
+    "legend.labelcolor": INK2})
+
+METHODS = ["single", "multi", "floor_rigid", "floor"]
+
+
+def plain_log(ax):
+    ax.yaxis.set_major_locator(LogLocator(base=10, subs=(1.0, 2.0, 5.0)))
+    ax.yaxis.set_minor_formatter(FuncFormatter(lambda v, p: ""))
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, p: f"{v:g}"))
+
+
+def random_pose(rng, W, D, margin=0.3):
+    return (rng.uniform(margin, W - margin), rng.uniform(margin, D - margin),
+            rng.uniform(-np.pi, np.pi))
+
+
+def realistic_setup(rng, tag_size=0.15, spacing=0.75, map_pos=0.01,
+                    map_yaw=1.0, f_err=0.01, c_err=3.0, cam=None):
+    tags, (W, D) = make_arena(tag_size=tag_size, spacing=spacing)
+    cam = cam or Camera()
+    map_tags = perturb_map(tags, rng, map_pos, map_yaw) if map_pos > 0 else None
+    K_est = perturb_intrinsics(cam.K, rng, f_err, c_err)
+    return tags, map_tags, cam, K_est, (W, D)
+
+
+def summarise(results, methods=METHODS):
+    n = len(results)
+    hit = [r for r in results if r.n_tags > 0]
+    s = {"frames": n, "coverage_pct": 100 * len(hit) / n,
+         "mean_tags_seen": float(np.mean([r.n_tags for r in results]))}
+    for m in methods:
+        e = np.array([r.err[m] for r in hit])
+        if len(e) == 0:
+            continue
+        s[m] = {"pos_median_cm": 100 * np.median(e[:, 0]),
+                "pos_p90_cm": 100 * np.percentile(e[:, 0], 90),
+                "pos_p99_cm": 100 * np.percentile(e[:, 0], 99),
+                "yaw_median_deg": np.median(e[:, 1]),
+                "yaw_p90_deg": np.percentile(e[:, 1], 90),
+                "gross_fail_pct": 100 * np.mean(e[:, 0] > 0.25)}
+    return s
+
+
+# ---------------------------------------------------------------------------
+# Example frame
+# ---------------------------------------------------------------------------
+def example_frame():
+    rng = np.random.default_rng(7)
+    tags, map_tags, cam, K_est, _ = realistic_setup(rng)
+    pose = (1.3, 1.1, np.radians(-55))
+    r, img, det = measure(pose, tags, cam, Degradation(), rng,
+                          K_est=K_est, map_tags=map_tags, return_image=True)
+    vis = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    for tag, uv in det:
+        cv2.polylines(vis, [uv.astype(np.int32)], True, (214, 120, 42), 2)
+        _, rv, tv = cv2.solvePnP(tag.corners_tag(), uv, cam.K, None,
+                                 flags=cv2.SOLVEPNP_IPPE_SQUARE)
+        cv2.drawFrameAxes(vis, cam.K, None, rv, tv, tag.size * 0.6, 2)
+        cv2.putText(vis, f"id {tag.id}", tuple(uv[0].astype(int) + [0, -8]),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (214, 120, 42), 1, cv2.LINE_AA)
+    e = r.est["floor"]
+    txt = (f"true  x={pose[0]:.3f} y={pose[1]:.3f} yaw={np.degrees(pose[2]):.1f}")
+    txt2 = (f"est   x={e[0]:.3f} y={e[1]:.3f} yaw={np.degrees(e[2]):.1f}")
+    for i, t in enumerate((txt, txt2)):
+        cv2.putText(vis, t, (10, 450 + 20 * i), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
+                    (255, 255, 255), 1, cv2.LINE_AA)
+    cv2.imwrite(os.path.join(OUT, "example_frame.png"), vis)
+
+
+# ---------------------------------------------------------------------------
+# A. Main Monte Carlo
+# ---------------------------------------------------------------------------
+def experiment_A(N=1200):
+    rng = np.random.default_rng(42)
+    tags, map_tags, cam, K_est, (W, D) = realistic_setup(rng)
+    det = make_detector()
+    res = [measure(random_pose(rng, W, D), tags, cam, Degradation(), rng,
+                   detector=det, K_est=K_est, map_tags=map_tags)
+           for _ in range(N)]
+
+    hit = [r for r in res if r.n_tags > 0]
+    d = np.array([r.nearest_dist for r in hit])
+    bins = np.arange(0.25, 4.01, 0.35)
+    centers = (bins[:-1] + bins[1:]) / 2
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
+    for ax, k, unit, title in ((axes[0], 0, 100, "Position error (cm)"),
+                               (axes[1], 1, 1, "Heading error (deg)")):
+        for m in METHODS:
+            e = np.array([r.err[m][k] for r in hit]) * unit
+            med = [np.median(e[(d >= a) & (d < b)]) if np.sum((d >= a) & (d < b)) >= 15
+                   else np.nan for a, b in zip(bins[:-1], bins[1:])]
+            ax.plot(centers, med, color=C[m], lw=2, marker="o", ms=4,
+                    label=LABEL[m])
+        ax.set_yscale("log")
+        plain_log(ax)
+        ax.set_xlabel("Distance to nearest detected tag (m)")
+        ax.set_title(f"Median {title.lower()}", loc="left")
+    axes[0].legend(loc="upper left", fontsize=9)
+    fig.suptitle("Single-camera tag localization: error vs distance "
+                 f"({len(hit)} simulated frames)", x=0.01, ha="left",
+                 color=INK, fontweight="bold")
+    fig.tight_layout()
+    fig.savefig(os.path.join(OUT, "error_vs_distance.png"), dpi=150)
+    plt.close(fig)
+    return summarise(res)
+
+
+# ---------------------------------------------------------------------------
+# B. Sensitivity
+# ---------------------------------------------------------------------------
+def experiment_B(N=300):
+    scenarios = {
+        "baseline (15 cm tags, every 0.75 m, 640x480)": {},
+        "smaller tags (10 cm)": {"tag_size": 0.10},
+        "larger tags (20 cm)": {"tag_size": 0.20},
+        "sparse tags (every 1.5 m)": {"spacing": 1.5},
+        "photo while walking (5 px motion blur)": {"deg": Degradation(motion_px=5)},
+        "uncalibrated camera (f off 8%, centre off 15 px)": {"f_err": 0.08, "c_err": 15},
+        "sloppy tag map (3 cm, 3 deg)": {"map_pos": 0.03, "map_yaw": 3.0},
+        "low-res camera (320x240)": {"cam": Camera(width=320, height=240)},
+    }
+    out = {}
+    for name, kw in scenarios.items():
+        rng = np.random.default_rng(123)
+        deg = kw.pop("deg", Degradation())
+        tags, map_tags, cam, K_est, (W, D) = realistic_setup(rng, **kw)
+        det = make_detector()
+        res = [measure(random_pose(rng, W, D), tags, cam, deg, rng,
+                       detector=det, K_est=K_est, map_tags=map_tags)
+               for _ in range(N)]
+        out[name] = summarise(res, ["single", "floor"])
+        f = out[name].get("floor", {})
+        print(f"  {name:52s} coverage {out[name]['coverage_pct']:5.1f}%  "
+              f"floor median {f.get('pos_median_cm', np.nan):5.1f} cm  "
+              f"p90 {f.get('pos_p90_cm', np.nan):5.1f} cm", flush=True)
+    return out
+
+
+# ---------------------------------------------------------------------------
+# C. Trajectory: bad odometry + tag fixes in an EKF
+# ---------------------------------------------------------------------------
+def motion(x, fwd, turn):
+    """Turn-then-walk motion model used for truth, dead reckoning and EKF."""
+    th = x[2] + turn
+    return np.array([x[0] + fwd * np.cos(th), x[1] + fwd * np.sin(th),
+                     wrap(th)])
+
+
+def simulate_run(steps=240, on_step=None, seed=5):
+    """Walk the robot round a waypoint loop with badly-calibrated motors.
+
+    Each step: plan a command from the fused estimate, move (truth, dead
+    reckoning, EKF prediction), stop, take a photo, fuse any tag fix.
+
+    on_step(info) is called after every step with a dict holding the
+    states before/after the step, the photo, detections and the fix.
+    It must not use the simulation's random generator, so recording a
+    video never changes the numbers.
+    Returns (log, ctx): per-step arrays and the scene used.
+    """
+    rng = np.random.default_rng(seed)
+    tags, map_tags, cam, K_est, (W, D) = realistic_setup(rng)
+    det = make_detector()
+    # Standing still for the photo: little bobbing, no motion blur.
+    deg = Degradation(bob_pitch_deg=0.7, bob_roll_deg=0.5, bob_dz_m=0.002)
+
+    # This robot's (unknown) motor personality: walks 18 % short, curves
+    # left, and every step has random slip.
+    SCALE, CURVE = 0.82, np.radians(1.5)
+
+    waypoints = [(3.3, 0.7), (3.3, 2.3), (0.7, 2.3), (0.7, 0.7)] * 3
+    x_true = np.array([0.7, 0.7, 0.0])
+    x_dr = x_true.copy()
+    x_kf, P = x_true.copy(), np.diag([1e-4, 1e-4, 1e-4])
+    wp = 0
+    log = {"true": [], "dr": [], "kf": [], "fix": [], "n_tags": []}
+    ctx = {"tags": tags, "map_tags": map_tags, "cam": cam, "K_est": K_est,
+           "W": W, "D": D, "steps": steps, "start": x_true.copy()}
+
+    for k in range(steps):
+        prev = {"true": x_true.copy(), "dr": x_dr.copy(), "kf": x_kf.copy()}
+        # Planner uses the fused estimate to pick its command.
+        tx, ty = waypoints[wp % len(waypoints)]
+        if np.hypot(tx - x_kf[0], ty - x_kf[1]) < 0.15:
+            wp += 1
+            tx, ty = waypoints[wp % len(waypoints)]
+        bearing = wrap(np.arctan2(ty - x_kf[1], tx - x_kf[0]) - x_kf[2])
+        turn = np.clip(bearing, -np.radians(30), np.radians(30))
+        fwd = 0.10 if abs(bearing) < np.radians(30) else 0.0
+
+        # Truth: what the motors actually do.
+        x_true = motion(x_true, fwd * SCALE * (1 + rng.normal(0, 0.08)),
+                        turn * 0.9 + CURVE * (fwd > 0) + rng.normal(0, np.radians(2)))
+        x_true[:2] = np.clip(x_true[:2], 0.25, [W - 0.25, D - 0.25])
+
+        # Dead reckoning: integrate commands only.
+        x_dr = motion(x_dr, fwd, turn)
+        # EKF predict.
+        Fj = np.array([[1, 0, -fwd * np.sin(x_kf[2] + turn)],
+                       [0, 1, fwd * np.cos(x_kf[2] + turn)], [0, 0, 1]])
+        x_kf = motion(x_kf, fwd, turn)
+        Q = np.diag([(0.25 * fwd) ** 2 + 1e-6, (0.25 * fwd) ** 2 + 1e-6,
+                     np.radians(4) ** 2])
+        P = Fj @ P @ Fj.T + Q
+        kf_pred = x_kf.copy()
+
+        # Photo + tag measurement.
+        r, img, dets = measure(tuple(x_true), tags, cam, deg, rng, detector=det,
+                               K_est=K_est, map_tags=map_tags, return_image=True)
+        got = False
+        if r.n_tags > 0:
+            z = np.array(r.est["floor"])
+            sd = 0.01 + 0.012 * r.nearest_dist        # trust nearby tags more
+            Rm = np.diag([sd ** 2, sd ** 2, np.radians(0.3 + 0.5 * r.nearest_dist) ** 2])
+            y = z - x_kf
+            y[2] = wrap(y[2])
+            S = P + Rm
+            if y @ np.linalg.solve(S, y) < 16.0:      # reject gross outliers
+                Kg = P @ np.linalg.inv(S)
+                x_kf = x_kf + Kg @ y
+                x_kf[2] = wrap(x_kf[2])
+                P = (np.eye(3) - Kg) @ P
+                got = True
+        for key, v in (("true", x_true), ("dr", x_dr), ("kf", x_kf)):
+            log[key].append(v.copy())
+        log["fix"].append(got)
+        log["n_tags"].append(r.n_tags)
+        if on_step is not None:
+            on_step({"k": k, "prev": prev, "kf_pred": kf_pred,
+                     "new": {"true": x_true.copy(), "dr": x_dr.copy(),
+                             "kf": x_kf.copy()},
+                     "cmd": (fwd, turn), "image": img, "dets": dets,
+                     "result": r, "fix": got, "waypoint": (tx, ty)})
+
+    log = {k: np.array(v) for k, v in log.items()}
+    return log, ctx
+
+
+def experiment_C(steps=240):
+    log, ctx = simulate_run(steps)
+    tags, W, D = ctx["tags"], ctx["W"], ctx["D"]
+    T, DR, KF, fix = log["true"], log["dr"], log["kf"], log["fix"]
+    e_dr = np.hypot(*(DR - T)[:, :2].T)
+    e_kf = np.hypot(*(KF - T)[:, :2].T)
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.4),
+                             gridspec_kw={"width_ratios": [1.15, 1]})
+    ax = axes[0]
+    ax.add_patch(plt.Rectangle((0, 0), W, D, fill=False, ec=AXIS, lw=1.5))
+    for t in tags:
+        ax.plot(*t.center[:2], "s", color=INK2, ms=4)
+    ax.plot(T[:, 0], T[:, 1], color=INK, lw=2, label="True path")
+    ax.plot(DR[:, 0], DR[:, 1], color=C["multi"], lw=2,
+            label="Motor dead reckoning")
+    ax.plot(KF[:, 0], KF[:, 1], color=C["single"], lw=2, ls="--",
+            label="Dead reckoning + tag fixes")
+    ax.set_aspect("equal")
+    ax.set_xlim(-0.6, W + 0.6)
+    ax.set_ylim(-0.6, D + 0.6)
+    ax.set_xlabel("x (m)")
+    ax.set_ylabel("y (m)")
+    ax.set_title("Where the robot thinks it is (squares = tags)", loc="left")
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=3, fontsize=9)
+
+    ax = axes[1]
+    ax.plot(e_dr * 100, color=C["multi"], lw=2, label="Motor dead reckoning")
+    ax.plot(e_kf * 100, color=C["single"], lw=2, label="Dead reckoning + tag fixes")
+    ax.set_yscale("log")
+    plain_log(ax)
+    ax.set_xlabel("Step")
+    ax.set_ylabel("Position error (cm)")
+    ax.set_title("Position error over time", loc="left")
+    ax.text(len(e_dr) - 1, e_dr[-1] * 100, f" {e_dr[-1] * 100:.0f} cm",
+            color=INK2, va="center", fontsize=9)
+    ax.text(len(e_kf) - 1, max(e_kf[-1] * 100, 0.2), f" {e_kf[-1] * 100:.1f} cm",
+            color=INK2, va="center", fontsize=9)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.14), ncol=2, fontsize=9)
+    fig.tight_layout()
+    fig.savefig(os.path.join(OUT, "trajectory.png"), dpi=150)
+    plt.close(fig)
+    return {"steps": steps, "fix_rate_pct": 100 * fix.mean(),
+            "dr_final_err_cm": 100 * e_dr[-1], "dr_max_err_cm": 100 * e_dr.max(),
+            "fused_median_err_cm": 100 * np.median(e_kf),
+            "fused_p90_err_cm": 100 * np.percentile(e_kf, 90),
+            "fused_max_err_cm": 100 * e_kf.max()}
+
+
+if __name__ == "__main__":
+    OUT = sys.argv[1] if len(sys.argv) > 1 else "results"
+    os.makedirs(OUT, exist_ok=True)
+    t0 = time.time()
+    example_frame()
+    print("A. Monte Carlo ...", flush=True)
+    A = experiment_A()
+    print(json.dumps(A, indent=1, default=float), flush=True)
+    print("B. Sensitivity ...", flush=True)
+    B = experiment_B()
+    print("C. Trajectory ...", flush=True)
+    Cr = experiment_C()
+    print(json.dumps(Cr, indent=1, default=float))
+    with open(os.path.join(OUT, "results.json"), "w") as f:
+        json.dump({"A_main": A, "B_sensitivity": B, "C_trajectory": Cr}, f,
+                  indent=1, default=float)
+    print(f"done in {time.time() - t0:.0f} s -> {OUT}/")
