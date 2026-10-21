@@ -1,7 +1,8 @@
 """
 cube_experiments.py - can the robot find a tagged cube?
 
-  python3 cube_experiments.py [output_dir]
+  python3 -m experiments.cube_experiments [output_dir]   (from the repo root;
+                                    default output: results/cube)
 
 A 10 cm cube with a 7 cm AprilTag centred on each face (ids 100-105) is
 lying on a random face, at a random spot and yaw, inside the arena of
@@ -36,10 +37,10 @@ from matplotlib.patches import Polygon, Rectangle
 from matplotlib.lines import Line2D
 from scipy.spatial.transform import Rotation
 from tagsim import *
-from run_experiments import (realistic_setup, simulate_run, plain_log, INK,
+from experiments.run_experiments import (realistic_setup, simulate_run, plain_log, INK,
                              INK2, MUTED, GRID, AXIS, SURF, C)
 
-OUT = "results"          # set from the command line in __main__
+OUT = "results/cube"          # set from the command line in __main__
 
 CUBE_C = {"pnp": C["multi"], "floor": C["single"], "world": C["floor"]}
 FUSED = C["multi"]                     # fused cube estimate in experiment E
@@ -257,12 +258,13 @@ def experiment_D2(N=500):
 # ---------------------------------------------------------------------------
 # E. Consistency while moving
 # ---------------------------------------------------------------------------
-def cube_run(seed, steps):
+def cube_run(seed, steps, **kw):
+    """kw goes to simulate_run (e.g. calibrate, motors)."""
     rng = np.random.default_rng(1000 + seed)
     # Inside the loop, at least ~0.4 m from the waypoint path.
     cube = random_cube(rng, xlim=(1.3, 2.7), ylim=(1.1, 1.9))
     log, ctx = simulate_run(steps, seed=5 + seed, cube=cube, waypoints=WAYPOINTS,
-                            look_at_cube=True)
+                            look_at_cube=True, **kw)
     return log, ctx
 
 
@@ -416,7 +418,7 @@ def plot_E(log, ctx):
 
 
 if __name__ == "__main__":
-    OUT = sys.argv[1] if len(sys.argv) > 1 else "results"
+    OUT = sys.argv[1] if len(sys.argv) > 1 else "results/cube"
     os.makedirs(OUT, exist_ok=True)
     t0 = time.time()
     example_frame()

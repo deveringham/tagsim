@@ -1,7 +1,8 @@
 """
 make_video.py - videos of one simulated run (the experiment C trajectory)
 
-  python3 make_video.py [out_dir] [--steps 240] [--substeps 3] [--hold 2] [--fps 24]
+  python3 -m experiments.make_video [out_dir] [--steps 240] [--substeps 3] [--hold 2] [--fps 24]
+  (from the repo root; default output: results/videos)
 
 Writes three H.264 MP4s (needs the ffmpeg command-line tool):
   camera_view.mp4      what the robot's camera sees, with detections
@@ -29,7 +30,7 @@ from matplotlib.lines import Line2D
 from matplotlib.collections import LineCollection
 
 from tagsim import render, robot_T, wrap, Degradation
-from run_experiments import (simulate_run, plain_log, INK, INK2, MUTED, GRID,
+from experiments.run_experiments import (simulate_run, plain_log, INK, INK2, MUTED, GRID,
                              AXIS, SURF, C)
 
 BLUE, ORANGE = C["single"], C["multi"]           # fused estimate, dead reckoning
@@ -294,7 +295,7 @@ def fmt_pose(name, p, truth=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("out", nargs="?", default="results")
+    ap.add_argument("out", nargs="?", default="results/videos")
     ap.add_argument("--steps", type=int, default=240)
     ap.add_argument("--substeps", type=int, default=3)
     ap.add_argument("--hold", type=int, default=2)
