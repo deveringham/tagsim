@@ -187,11 +187,18 @@ def motion(x, fwd, turn):
                      wrap(th)])
 
 
-def simulate_run(steps=240, on_step=None, seed=5):
+def simulate_run(steps=240, on_step=None, seed=5, cube=None, waypoints=None,
+                 look_at_cube=False):
     """Walk the robot round a waypoint loop with badly-calibrated motors.
 
     Each step: plan a command from the fused estimate, move (truth, dead
     reckoning, EKF prediction), stop, take a photo, fuse any tag fix.
+
+    With a cube: every photo that shows it places the cube on the map
+    (floor-constrained relative pose composed with the fused robot pose)
+    and a CubeTracker fuses those placements.  With look_at_cube, once the
+    cube has been seen the robot turns to face it at every waypoint and
+    takes a few photos before walking on.
 
     on_step(info) is called after every step with a dict holding the
     states before/after the step, the photo, detections and the fix.
@@ -209,14 +216,21 @@ def simulate_run(steps=240, on_step=None, seed=5):
     # left, and every step has random slip.
     SCALE, CURVE = 0.82, np.radians(1.5)
 
-    waypoints = [(3.3, 0.7), (3.3, 2.3), (0.7, 2.3), (0.7, 0.7)] * 3
+    waypoints = waypoints or [(3.3, 0.7), (3.3, 2.3), (0.7, 2.3), (0.7, 0.7)]
     x_true = np.array([0.7, 0.7, 0.0])
     x_dr = x_true.copy()
     x_kf, P = x_true.copy(), np.diag([1e-4, 1e-4, 1e-4])
     wp = 0
     log = {"true": [], "dr": [], "kf": [], "fix": [], "n_tags": []}
     ctx = {"tags": tags, "map_tags": map_tags, "cam": cam, "K_est": K_est,
-           "W": W, "D": D, "steps": steps, "start": x_true.copy()}
+           "W": W, "D": D, "steps": steps, "start": x_true.copy(), "cube": cube}
+    if cube is not None:
+        tracker, look_left = CubeTracker(), 0
+        ctx["cube_tracker"] = tracker
+        for key in ("cube_in_frame", "cube_faces", "cube_dist", "cube_T",
+                    "cube_accepted",
+                    "cube_err_world", "cube_err_rel", "cube_err_fused"):
+            log[key] = []
 
     for k in range(steps):
         prev = {"true": x_true.copy(), "dr": x_dr.copy(), "kf": x_kf.copy()}
@@ -225,9 +239,20 @@ def simulate_run(steps=240, on_step=None, seed=5):
         if np.hypot(tx - x_kf[0], ty - x_kf[1]) < 0.15:
             wp += 1
             tx, ty = waypoints[wp % len(waypoints)]
-        bearing = wrap(np.arctan2(ty - x_kf[1], tx - x_kf[0]) - x_kf[2])
-        turn = np.clip(bearing, -np.radians(30), np.radians(30))
-        fwd = 0.10 if abs(bearing) < np.radians(30) else 0.0
+            if look_at_cube and tracker.T is not None:
+                look_left = 3
+        if look_at_cube and look_left > 0:
+            # Turn on the spot towards where the cube is believed to be.
+            cx, cy = tracker.T[:2, 3]
+            bearing = wrap(np.arctan2(cy - x_kf[1], cx - x_kf[0]) - x_kf[2])
+            turn = np.clip(bearing, -np.radians(30), np.radians(30))
+            fwd = 0.0
+            if abs(bearing) < np.radians(8):
+                look_left -= 1
+        else:
+            bearing = wrap(np.arctan2(ty - x_kf[1], tx - x_kf[0]) - x_kf[2])
+            turn = np.clip(bearing, -np.radians(30), np.radians(30))
+            fwd = 0.10 if abs(bearing) < np.radians(30) else 0.0
 
         # Truth: what the motors actually do.
         x_true = motion(x_true, fwd * SCALE * (1 + rng.normal(0, 0.08)),
@@ -247,7 +272,8 @@ def simulate_run(steps=240, on_step=None, seed=5):
 
         # Photo + tag measurement.
         r, img, dets = measure(tuple(x_true), tags, cam, deg, rng, detector=det,
-                               K_est=K_est, map_tags=map_tags, return_image=True)
+                               K_est=K_est, map_tags=map_tags, return_image=True,
+                               cube=cube)
         got = False
         if r.n_tags > 0:
             z = np.array(r.est["floor"])
@@ -266,14 +292,32 @@ def simulate_run(steps=240, on_step=None, seed=5):
             log[key].append(v.copy())
         log["fix"].append(got)
         log["n_tags"].append(r.n_tags)
+        if cube is not None:
+            T_cube, accepted = None, False
+            if r.cube_faces:
+                T_rel = r.cube_rel["floor"]
+                T_cube = robot_T(*x_kf) @ T_rel
+                accepted = tracker.add(T_cube, np.linalg.norm(T_rel[:2, 3]))
+            nan2 = (np.nan, np.nan)
+            log["cube_in_frame"].append(r.cube_in_frame)
+            log["cube_faces"].append(r.cube_faces)
+            log["cube_dist"].append(r.cube_dist)
+            log["cube_T"].append(T_cube)
+            log["cube_accepted"].append(accepted)
+            log["cube_err_world"].append(
+                cube_error(T_cube, cube.T) if T_cube is not None else nan2)
+            log["cube_err_rel"].append(r.cube_err_rel.get("floor", nan2))
+            log["cube_err_fused"].append(
+                cube_error(tracker.T, cube.T) if tracker.T is not None else nan2)
         if on_step is not None:
             on_step({"k": k, "prev": prev, "kf_pred": kf_pred,
                      "new": {"true": x_true.copy(), "dr": x_dr.copy(),
                              "kf": x_kf.copy()},
                      "cmd": (fwd, turn), "image": img, "dets": dets,
-                     "result": r, "fix": got, "waypoint": (tx, ty)})
+                     "result": r, "fix": got, "waypoint": (tx, ty),
+                     "cube_fused": tracker.T if cube is not None else None})
 
-    log = {k: np.array(v) for k, v in log.items()}
+    log = {k: v if k == "cube_T" else np.array(v) for k, v in log.items()}
     return log, ctx
 
 
