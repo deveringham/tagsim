@@ -187,15 +187,19 @@ class Navigator:
              If that fails too, give up looking for `retry` steps and carry
              on blind (arrival is then allowed without a fix).
     Any accepted fix ends a look / search.
+    look_only_in_range: when no landmark is within its max_range (and
+             facing us), don't look at all - carry on blind for `retry`
+             steps instead of a futile look / search.
     """
 
     def __init__(self, landmarks, look_sd=0.05, arrive_m=0.03, step=0.10,
-                 max_turn_deg=30.0, patience=3, retry=8):
+                 max_turn_deg=30.0, patience=3, retry=8, look_only_in_range=False):
         self.landmarks = landmarks
         self.look_sd, self.arrive_m, self.step = look_sd, arrive_m, step
         self.max_turn = np.radians(max_turn_deg)
         self.patience, self.retry = patience, retry
-        self.stats = {"looks": 0, "searches": 0, "gave_up": 0}
+        self.look_only_in_range = look_only_in_range
+        self.stats = {"looks": 0, "searches": 0, "gave_up": 0, "out_of_range": 0}
 
     def set_goal(self, goal):
         self.goal = np.asarray(goal, float)
@@ -209,10 +213,15 @@ class Navigator:
         p = x[:2]
         good = [l for l in self.landmarks if l.in_view_cone(p)
                 and np.linalg.norm(l.xy - p) < l.max_range]
+        if not good and self.look_only_in_range:
+            self.blind_left = self.retry
+            self.stats["out_of_range"] += 1
+            return False
         pool = good or self.landmarks
         self.target = min(pool, key=lambda l: np.linalg.norm(l.xy - p))
         self.mode, self.facing = "look", 0
         self.stats["looks"] += 1
+        return True
 
     def command(self, x, pos_sd, fixed):
         """Next (fwd, turn), or None when the goal is reached.
@@ -226,11 +235,11 @@ class Navigator:
         if self.mode == "go":
             dist = np.linalg.norm(self.goal - x[:2])
             lost = pos_sd > self.look_sd and self.blind_left == 0
-            if dist < self.arrive_m and not lost:
-                return None
-            if lost:
-                self._start_look(x)
-            else:
+            if lost and not self._start_look(x):
+                lost = False                  # nothing in range: go on blind
+            if self.mode == "go":
+                if dist < self.arrive_m and not lost:
+                    return None
                 b, turn = self._turn_to(x, self.goal)
                 fwd = min(self.step, dist) if abs(b) < self.max_turn else 0.0
                 return fwd, turn

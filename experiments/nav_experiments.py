@@ -558,17 +558,22 @@ def plot_2b(out, setups):
 START = np.array([0.7, 0.7, 0.0])
 
 
-def goal_sequence(rng, n, W, D, margin=0.4, clear=0.35):
+def goal_sequence(rng, n, W, D, margin=0.4, clear=0.35, centre=CUBE_CENTRE,
+                  start=START):
     """Random spots; neither they nor the straight lines between them pass
-    within `clear` of the room centre (where the cube sits)."""
+    within `clear` of `centre` (where the cube sits)."""
     def seg_dist(a, b, p):
         t = np.clip((p - a) @ (b - a) / ((b - a) @ (b - a)), 0, 1)
         return np.linalg.norm(a + t * (b - a) - p)
-    goals, p = [], START[:2]
+    goals, p, tries = [], start[:2], 0
     while len(goals) < n:
+        tries += 1
+        if tries > 100000:
+            raise RuntimeError("goal_sequence: no valid spot - room too small "
+                               "for this clearance?")
         g = rng.uniform([margin, margin], [W - margin, D - margin])
-        if (np.linalg.norm(g - p) > 0.5 and np.linalg.norm(g - CUBE_CENTRE) > clear
-                and seg_dist(p, g, CUBE_CENTRE) > clear):
+        if (np.linalg.norm(g - p) > 0.5 and np.linalg.norm(g - centre) > clear
+                and seg_dist(p, g, centre) > clear):
             goals.append(g)
             p = g
     return goals
@@ -582,18 +587,32 @@ def goal_run(args):
     drift_rng = np.random.default_rng(700 + seed)
     goals = goal_sequence(np.random.default_rng(800 + seed), n_goals,
                           sc["W"], sc["D"])
+    records, path, ekf = run_goals(sc, goals, motors, cal, rng, drift_rng, max_steps)
+    return {"setup": setup, "cal": cal, "seed": seed, "goals": records,
+            "path": path, "goal_xy": np.array(goals),
+            "bias_true": motors.biases, "bias_est": ekf.biases}
+
+
+def run_goals(sc, goals, motors, cal, rng, drift_rng, max_steps, nav_kw=None,
+              start=START):
+    """Send the robot to each goal in turn (Navigator + OdometryEKF), taking
+    a photo after every step.  max_steps: per goal, an int or a function of
+    the straight-line distance to the goal.  Returns per-goal records, the
+    true path and the filter."""
     det = make_detector()
-    ekf = OdometryEKF(START, calibrate=cal)
-    nav = Navigator(sc["landmarks"])
-    x_true, fixed = START.copy(), False
+    ekf = OdometryEKF(start, calibrate=cal)
+    nav = Navigator(sc["landmarks"], **(nav_kw or {}))
+    x_true, fixed = np.array(start, float), False
     records, path = [], [x_true.copy()]
     for g in goals:
         nav.set_goal(g)
         s0 = dict(nav.stats)
         steps = 0
+        limit = max_steps(np.linalg.norm(g - x_true[:2])) if callable(max_steps) \
+            else max_steps
         while True:
             cmd = nav.command(ekf.pose, ekf.pos_sd, fixed)
-            if cmd is None or steps >= max_steps:
+            if cmd is None or steps >= limit:
                 break
             fwd, turn = cmd
             x_true = motors.move(x_true, fwd, turn, rng, drift_rng)
@@ -612,10 +631,9 @@ def goal_run(args):
             "looks": nav.stats["looks"] - s0["looks"],
             "searches": nav.stats["searches"] - s0["searches"],
             "gave_up": nav.stats["gave_up"] - s0["gave_up"],
+            "out_of_range": nav.stats["out_of_range"] - s0["out_of_range"],
             "dist_m": float(np.linalg.norm(g - path[-steps - 1][:2])) if steps else 0.0})
-    return {"setup": setup, "cal": cal, "seed": seed, "goals": records,
-            "path": np.array(path), "goal_xy": np.array(goals),
-            "bias_true": motors.biases, "bias_est": ekf.biases}
+    return records, np.array(path), ekf
 
 
 def experiment_3(seeds=8, n_goals=12, max_steps=200):

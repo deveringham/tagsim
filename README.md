@@ -29,11 +29,13 @@ experiments/
   run_experiments.py   A-C: robot localization accuracy
   cube_experiments.py  D-E: locating the tagged cube
   nav_experiments.py   K, 1, 2, 2b, 3: navigation with few tags
+  scale_experiments.py S1, S2: room size vs landmark size
   make_video.py        videos of the experiment C run
 results/
   localization/        figures + results.json from run_experiments
   cube/                figures + cube_results.json from cube_experiments
   navigation/          figures + nav_results.json from nav_experiments
+  scale/               figures + scale_results.json from scale_experiments
   videos/              MP4s from make_video
 ```
 
@@ -57,7 +59,8 @@ fixed random seed per experiment.
 | `python3 -m experiments.run_experiments` | A: Monte Carlo error vs distance for 4 estimators; B: sensitivity (tag size, spacing, blur, calibration, map error, resolution); C: a walking loop with bad odometry + EKF | ~3 min | `results/localization` |
 | `python3 -m experiments.cube_experiments` | D: cube pose from single photos, D2: variations, E: cube location consistency while the robot moves | ~4 min | `results/cube` |
 | `python3 -m experiments.nav_experiments [--workers N] [--only K 1 2 2b 3]` | K: online calibration on runs C/E; 1: fix-quality maps; 2/2b: walking blind; 3: reaching spots with 1-18 landmarks | ~20 min on 14 cores | `results/navigation` |
-| `python3 -m experiments.make_video` | camera view, animated map, and both side by side for the C run | not measured | `results/videos` |
+| `python3 -m experiments.scale_experiments [--workers N] [--only S1 S2]` | S1: fix quality vs distance for landmark sizes; S2: reaching spots for every room size x landmark size | ~10 min on 14 cores | `results/scale` |
+| `python3 -m experiments.make_video` | camera view, animated map, and both side by side for the C run | ~2 min | `results/videos` |
 
 \* Rough times from the development machine.
 
@@ -105,6 +108,12 @@ tag, corners TL, TR, BR, BL. Cube origin at its centre, face k carries tag
   `s = 0.82`, `k = 0.9`, `c = 1.5 deg/step`. `s`, `k` and `c` can also drift
   as a slow random walk.
 - **Cube:** 10 cm, with 7 cm tags (ids 100-105), lying on a random face.
+- **Sizes are configurable:**
+  - `make_arena(width, depth, tag_size, tag_height, spacing)`
+  - `realistic_setup(room=..., tag_size=..., tag_height=...)`
+  - `Cube(T, edge, tag_size)`
+  - `scale_scene(kind, room, size)` in `experiments/scale_experiments.py`,
+    which builds any room with one cube in the middle or one tag per wall.
 
 ## Findings
 
@@ -190,6 +199,41 @@ are sparse, and nothing when they are plentiful. Four tags, one per wall,
 are about as accurate as eighteen.
 
 ![](results/navigation/goal_reaching.png)
+
+### Room size vs landmark size (`results/scale`)
+
+How small can the landmark be for a given room? The rooms are 2-12 m wide.
+The landmark is either one cube in the middle (6-40 cm) or one tag per wall
+(10-40 cm). The map is exact and the motor biases are learned online.
+
+- **Detection range scales with tag size:** about 25 tag sides for the cube,
+  18 for wall tags seen up to 60 deg off-axis. Fix error / tag side vs
+  distance / tag side is the same curve for every size.
+- **Reach of an accurate fix does not scale linearly.** Fix error grows as
+  distance^2 / tag size, but the 10 cm tolerance is absolute. So the reach
+  of a 10 cm fix goes from 26 tag sides for a 6 cm cube (1.1 m) to only 12
+  for a 40 cm cube (3.5 m). Small tags are limited by detection, large ones
+  by accuracy.
+- **Big landmarks also have a near limit.** With the camera 10 cm above the
+  floor, a tag must be about 2.5 sides away to fit in the frame: 0.7 m for a
+  40 cm cube, 1.1 m for a 40 cm wall tag.
+- **The breakdown is not at a fixed room / tag ratio.** At a room width of
+  about 70 tag sides, a 3 m room with a 6 cm cube reaches 98 % of spots
+  within 10 cm, but a 12 m room with a 25 cm cube only 40 %.
+- **What explains it is how far a spot lies beyond the landmark's accurate
+  reach, in metres.** Spots inside the reach are reached 89-96 % of the
+  time, falling to about 55 % in the first 0.5 m beyond it, about 30 % at
+  0.5-1 m, and under 15 % beyond 1 m. All cube sizes fall on this curve.
+  It has the shape of blind walking (experiment 2's motion model), starting
+  about 0.5 m earlier, because at the nominal reach half the fixes are
+  already worse than 10 cm.
+- **Rule of thumb:** keep every spot within about (reach of a 10 cm fix -
+  0.5 m) of some landmark. Since that reach grows more slowly than tag size,
+  big rooms are better served by more landmarks than by bigger ones. In an
+  8 x 6 m room, four 25 cm wall tags reach 90 % of spots; one 25 cm cube,
+  62 %.
+
+![](results/scale/scale_breakdown.png)
 
 ## Limitations and open questions
 

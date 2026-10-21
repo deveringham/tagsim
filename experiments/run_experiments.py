@@ -57,8 +57,10 @@ def random_pose(rng, W, D, margin=0.3):
 
 
 def realistic_setup(rng, tag_size=0.15, spacing=0.75, map_pos=0.01,
-                    map_yaw=1.0, f_err=0.01, c_err=3.0, cam=None):
-    tags, (W, D) = make_arena(tag_size=tag_size, spacing=spacing)
+                    map_yaw=1.0, f_err=0.01, c_err=3.0, cam=None,
+                    room=(4.0, 3.0), tag_height=0.20):
+    tags, (W, D) = make_arena(room[0], room[1], tag_size=tag_size,
+                              tag_height=tag_height, spacing=spacing)
     cam = cam or Camera()
     map_tags = perturb_map(tags, rng, map_pos, map_yaw) if map_pos > 0 else None
     K_est = perturb_intrinsics(cam.K, rng, f_err, c_err)
