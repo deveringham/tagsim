@@ -1,0 +1,516 @@
+{
+ "D_single_photos": {
+  "frames": 1500,
+  "cube_in_frame_pct": 100.0,
+  "cube_fully_in_frame_pct": 95.53333333333333,
+  "detected_pct_of_in_frame": 91.33333333333333,
+  "detected_pct_of_fully_in_frame": 91.48639218422889,
+  "two_faces_pct_of_detected": 47.59124087591241,
+  "pnp": {
+   "pos_median_cm": 1.288109343953349,
+   "pos_p90_cm": 5.50556615653423,
+   "rot_median_deg": 3.1046866316313846,
+   "rot_p90_deg": 14.131865587172271,
+   "pos_fail_pct (>10 cm)": 2.408759124087591,
+   "rot_fail_pct (>15 deg)": 9.562043795620438
+  },
+  "floor": {
+   "pos_median_cm": 1.371909863407237,
+   "pos_p90_cm": 6.059584697008804,
+   "rot_median_deg": 0.5866244358840416,
+   "rot_p90_deg": 6.317344933416309,
+   "pos_fail_pct (>10 cm)": 2.7737226277372264,
+   "rot_fail_pct (>15 deg)": 3.9416058394160585
+  },
+  "world": {
+   "pos_median_cm": 3.4884456833233255,
+   "pos_p90_cm": 8.827532339970148,
+   "rot_median_deg": 1.272228914133318,
+   "rot_p90_deg": 6.810680249287792,
+   "pos_fail_pct (>10 cm)": 7.153284671532846,
+   "rot_fail_pct (>15 deg)": 4.160583941605839
+  },
+  "by_faces_seen": {
+   "1": {
+    "frames": 718,
+    "cube_in_frame_pct": 100.0,
+    "cube_fully_in_frame_pct": 94.28969359331477,
+    "detected_pct_of_in_frame": 100.0,
+    "detected_pct_of_fully_in_frame": 100.0,
+    "two_faces_pct_of_detected": 0.0,
+    "pnp": {
+     "pos_median_cm": 2.005067304217625,
+     "pos_p90_cm": 7.705316792372232,
+     "rot_median_deg": 4.89860261852537,
+     "rot_p90_deg": 23.75817050737962,
+     "pos_fail_pct (>10 cm)": 4.596100278551532,
+     "rot_fail_pct (>15 deg)": 18.245125348189415
+    },
+    "floor": {
+     "pos_median_cm": 2.1990917243447603,
+     "pos_p90_cm": 7.880464694634473,
+     "rot_median_deg": 1.841857549948673,
+     "rot_p90_deg": 11.89973884963231,
+     "pos_fail_pct (>10 cm)": 5.2924791086350975,
+     "rot_fail_pct (>15 deg)": 7.520891364902507
+    },
+    "world": {
+     "pos_median_cm": 3.9643363381690873,
+     "pos_p90_cm": 9.390206807608026,
+     "rot_median_deg": 2.414014230666014,
+     "rot_p90_deg": 11.934596259594153,
+     "pos_fail_pct (>10 cm)": 8.774373259052924,
+     "rot_fail_pct (>15 deg)": 7.938718662952645
+    }
+   },
+   "2": {
+    "frames": 652,
+    "cube_in_frame_pct": 100.0,
+    "cube_fully_in_frame_pct": 97.23926380368098,
+    "detected_pct_of_in_frame": 100.0,
+    "detected_pct_of_fully_in_frame": 100.0,
+    "two_faces_pct_of_detected": 100.0,
+    "pnp": {
+     "pos_median_cm": 0.9960279375824584,
+     "pos_p90_cm": 3.2656162217783917,
+     "rot_median_deg": 2.2844779628390866,
+     "rot_p90_deg": 4.262815649932566,
+     "pos_fail_pct (>10 cm)": 0.0,
+     "rot_fail_pct (>15 deg)": 0.0
+    },
+    "floor": {
+     "pos_median_cm": 0.9921084449027583,
+     "pos_p90_cm": 3.3173815368842683,
+     "rot_median_deg": 0.34141981527403775,
+     "rot_p90_deg": 1.0484546318191417,
+     "pos_fail_pct (>10 cm)": 0.0,
+     "rot_fail_pct (>15 deg)": 0.0
+    },
+    "world": {
+     "pos_median_cm": 2.986356913146298,
+     "pos_p90_cm": 7.763432397047398,
+     "rot_median_deg": 0.8333779040233702,
+     "rot_p90_deg": 2.4025748012895485,
+     "pos_fail_pct (>10 cm)": 5.368098159509203,
+     "rot_fail_pct (>15 deg)": 0.0
+    }
+   }
+  },
+  "by_distance": {
+   "0.3-1.0 m": {
+    "frames": 755,
+    "cube_in_frame_pct": 100.0,
+    "cube_fully_in_frame_pct": 96.02649006622516,
+    "detected_pct_of_in_frame": 100.0,
+    "detected_pct_of_fully_in_frame": 100.0,
+    "two_faces_pct_of_detected": 60.66225165562914,
+    "pnp": {
+     "pos_median_cm": 0.8117923957866918,
+     "pos_p90_cm": 1.6761146059209482,
+     "rot_median_deg": 2.4430380877172313,
+     "rot_p90_deg": 5.105911085002024,
+     "pos_fail_pct (>10 cm)": 0.0,
+     "rot_fail_pct (>15 deg)": 1.7218543046357615
+    },
+    "floor": {
+     "pos_median_cm": 0.8011981793113998,
+     "pos_p90_cm": 1.7688761412536957,
+     "rot_median_deg": 0.3811877481613717,
+     "rot_p90_deg": 1.765273127972687,
+     "pos_fail_pct (>10 cm)": 0.0,
+     "rot_fail_pct (>15 deg)": 0.5298013245033113
+    },
+    "world": {
+     "pos_median_cm": 3.044686628669415,
+     "pos_p90_cm": 8.255526792618447,
+     "rot_median_deg": 0.9314877782603578,
+     "rot_p90_deg": 3.2262193963744474,
+     "pos_fail_pct (>10 cm)": 5.827814569536424,
+     "rot_fail_pct (>15 deg)": 0.6622516556291391
+    }
+   },
+   "1.0-1.8 m": {
+    "frames": 471,
+    "cube_in_frame_pct": 100.0,
+    "cube_fully_in_frame_pct": 100.0,
+    "detected_pct_of_in_frame": 100.0,
+    "detected_pct_of_fully_in_frame": 100.0,
+    "two_faces_pct_of_detected": 35.6687898089172,
+    "pnp": {
+     "pos_median_cm": 3.292931046550861,
+     "pos_p90_cm": 6.61286824611464,
+     "rot_median_deg": 4.778559568347714,
+     "rot_p90_deg": 22.16516508591289,
+     "pos_fail_pct (>10 cm)": 1.6985138004246285,
+     "rot_fail_pct (>15 deg)": 18.046709129511676
+    },
+    "floor": {
+     "pos_median_cm": 3.3916027367636583,
+     "pos_p90_cm": 7.12905400968617,
+     "rot_median_deg": 1.8373460646502902,
+     "rot_p90_deg": 11.464392226671983,
+     "pos_fail_pct (>10 cm)": 2.1231422505307855,
+     "rot_fail_pct (>15 deg)": 6.794055201698514
+    },
+    "world": {
+     "pos_median_cm": 3.7859766567147983,
+     "pos_p90_cm": 8.638924656361723,
+     "rot_median_deg": 2.430717664212167,
+     "rot_p90_deg": 11.558568018085037,
+     "pos_fail_pct (>10 cm)": 6.581740976645436,
+     "rot_fail_pct (>15 deg)": 7.218683651804671
+    }
+   },
+   "1.8-2.8 m": {
+    "frames": 91,
+    "cube_in_frame_pct": 100.0,
+    "cube_fully_in_frame_pct": 100.0,
+    "detected_pct_of_in_frame": 100.0,
+    "detected_pct_of_fully_in_frame": 100.0,
+    "two_faces_pct_of_detected": 4.395604395604396,
+    "pnp": {
+     "pos_median_cm": 7.301351327558324,
+     "pos_p90_cm": 13.37625573224093,
+     "rot_median_deg": 9.590337532882335,
+     "rot_p90_deg": 59.26705385045184,
+     "pos_fail_pct (>10 cm)": 27.472527472527474,
+     "rot_fail_pct (>15 deg)": 36.26373626373626
+    },
+    "floor": {
+     "pos_median_cm": 7.593605890980272,
+     "pos_p90_cm": 14.294174357562392,
+     "rot_median_deg": 5.415214828123872,
+     "rot_p90_deg": 33.20797804654933,
+     "pos_fail_pct (>10 cm)": 30.76923076923077,
+     "rot_fail_pct (>15 deg)": 19.78021978021978
+    },
+    "world": {
+     "pos_median_cm": 5.695865981526664,
+     "pos_p90_cm": 12.90572676139477,
+     "rot_median_deg": 4.943273022496243,
+     "rot_p90_deg": 33.795840290290265,
+     "pos_fail_pct (>10 cm)": 19.78021978021978,
+     "rot_fail_pct (>15 deg)": 19.78021978021978
+    }
+   }
+  }
+ },
+ "D2_variations": {
+  "baseline (10 cm cube, 7 cm tags)": {
+   "frames": 500,
+   "cube_in_frame_pct": 100.0,
+   "cube_fully_in_frame_pct": 96.8,
+   "detected_pct_of_in_frame": 93.0,
+   "detected_pct_of_fully_in_frame": 92.76859504132231,
+   "two_faces_pct_of_detected": 49.03225806451613,
+   "pnp": {
+    "pos_median_cm": 1.4953358374724641,
+    "pos_p90_cm": 5.8305469005229895,
+    "rot_median_deg": 2.9988815612675186,
+    "rot_p90_deg": 14.146377654090996,
+    "pos_fail_pct (>10 cm)": 2.3655913978494625,
+    "rot_fail_pct (>15 deg)": 9.46236559139785
+   },
+   "floor": {
+    "pos_median_cm": 1.489815536042469,
+    "pos_p90_cm": 6.142287981609906,
+    "rot_median_deg": 0.5674777352409621,
+    "rot_p90_deg": 7.4135723946533,
+    "pos_fail_pct (>10 cm)": 2.5806451612903225,
+    "rot_fail_pct (>15 deg)": 4.946236559139785
+   },
+   "world": {
+    "pos_median_cm": 3.247387384961431,
+    "pos_p90_cm": 7.9432316659253575,
+    "rot_median_deg": 1.2475203534206878,
+    "rot_p90_deg": 7.733670531513307,
+    "pos_fail_pct (>10 cm)": 4.516129032258064,
+    "rot_fail_pct (>15 deg)": 5.376344086021505
+   }
+  },
+  "small cube (6 cm, 4 cm tags)": {
+   "frames": 500,
+   "cube_in_frame_pct": 100.0,
+   "cube_fully_in_frame_pct": 99.4,
+   "detected_pct_of_in_frame": 65.0,
+   "detected_pct_of_fully_in_frame": 64.7887323943662,
+   "two_faces_pct_of_detected": 40.92307692307692,
+   "pnp": {
+    "pos_median_cm": 1.3185671289975345,
+    "pos_p90_cm": 4.458226411695022,
+    "rot_median_deg": 3.3413368876464085,
+    "rot_p90_deg": 23.412787209430913,
+    "pos_fail_pct (>10 cm)": 0.3076923076923077,
+    "rot_fail_pct (>15 deg)": 14.153846153846153
+   },
+   "floor": {
+    "pos_median_cm": 1.1928603166234881,
+    "pos_p90_cm": 4.865945648259363,
+    "rot_median_deg": 1.0222505221775795,
+    "rot_p90_deg": 6.188897137093956,
+    "pos_fail_pct (>10 cm)": 0.3076923076923077,
+    "rot_fail_pct (>15 deg)": 3.3846153846153846
+   },
+   "world": {
+    "pos_median_cm": 3.1008018785352522,
+    "pos_p90_cm": 7.903999563919924,
+    "rot_median_deg": 1.654481405742577,
+    "rot_p90_deg": 7.081023996132482,
+    "pos_fail_pct (>10 cm)": 3.076923076923077,
+    "rot_fail_pct (>15 deg)": 3.6923076923076925
+   }
+  },
+  "large cube (15 cm, 11 cm tags)": {
+   "frames": 500,
+   "cube_in_frame_pct": 100.0,
+   "cube_fully_in_frame_pct": 90.0,
+   "detected_pct_of_in_frame": 98.8,
+   "detected_pct_of_fully_in_frame": 100.0,
+   "two_faces_pct_of_detected": 55.06072874493927,
+   "pnp": {
+    "pos_median_cm": 1.1912127251907096,
+    "pos_p90_cm": 4.330450940378116,
+    "rot_median_deg": 2.5350372123931386,
+    "rot_p90_deg": 6.710840366146347,
+    "pos_fail_pct (>10 cm)": 1.417004048582996,
+    "rot_fail_pct (>15 deg)": 3.8461538461538463
+   },
+   "floor": {
+    "pos_median_cm": 1.219296623802052,
+    "pos_p90_cm": 4.539456544605115,
+    "rot_median_deg": 0.38695383810527195,
+    "rot_p90_deg": 3.491586900185657,
+    "pos_fail_pct (>10 cm)": 1.417004048582996,
+    "rot_fail_pct (>15 deg)": 3.2388663967611335
+   },
+   "world": {
+    "pos_median_cm": 3.281051961417008,
+    "pos_p90_cm": 8.000271095284294,
+    "rot_median_deg": 1.0120084893921113,
+    "rot_p90_deg": 4.724730322941297,
+    "pos_fail_pct (>10 cm)": 5.295315682281059,
+    "rot_fail_pct (>15 deg)": 3.054989816700611
+   }
+  },
+  "photo while walking (5 px motion blur)": {
+   "frames": 500,
+   "cube_in_frame_pct": 100.0,
+   "cube_fully_in_frame_pct": 96.4,
+   "detected_pct_of_in_frame": 65.8,
+   "detected_pct_of_fully_in_frame": 64.73029045643153,
+   "two_faces_pct_of_detected": 32.52279635258359,
+   "pnp": {
+    "pos_median_cm": 0.9228821153686242,
+    "pos_p90_cm": 4.5594715972602575,
+    "rot_median_deg": 4.732659806163379,
+    "rot_p90_deg": 20.567123009463845,
+    "pos_fail_pct (>10 cm)": 0.303951367781155,
+    "rot_fail_pct (>15 deg)": 17.02127659574468
+   },
+   "floor": {
+    "pos_median_cm": 1.0760451118280894,
+    "pos_p90_cm": 5.403918721514775,
+    "rot_median_deg": 1.3491705028612127,
+    "rot_p90_deg": 16.411362369621543,
+    "pos_fail_pct (>10 cm)": 0.60790273556231,
+    "rot_fail_pct (>15 deg)": 10.638297872340425
+   },
+   "world": {
+    "pos_median_cm": 4.148312141107358,
+    "pos_p90_cm": 14.65788129694839,
+    "rot_median_deg": 2.814189272951489,
+    "rot_p90_deg": 20.0077953923701,
+    "pos_fail_pct (>10 cm)": 15.18987341772152,
+    "rot_fail_pct (>15 deg)": 12.974683544303797
+   }
+  },
+  "cube not on the floor (any orientation, PnP only)": {
+   "frames": 500,
+   "cube_in_frame_pct": 100.0,
+   "cube_fully_in_frame_pct": 90.4,
+   "detected_pct_of_in_frame": 90.2,
+   "detected_pct_of_fully_in_frame": 92.47787610619469,
+   "two_faces_pct_of_detected": 61.86252771618626,
+   "pnp": {
+    "pos_median_cm": 1.7406434251499212,
+    "pos_p90_cm": 6.103671768987416,
+    "rot_median_deg": 2.8809728891329875,
+    "rot_p90_deg": 12.639549508909122,
+    "pos_fail_pct (>10 cm)": 1.7738359201773837,
+    "rot_fail_pct (>15 deg)": 8.869179600886918
+   }
+  }
+ },
+ "E_moving_robot": {
+  "detail_run": {
+   "photos": 320,
+   "photos_cube_in_frame": 95,
+   "photos_cube_fully_in_frame": 89,
+   "photos_cube_detected": 92,
+   "detected_pct_of_in_frame": 96.84210526315789,
+   "detected_pct_of_fully_in_frame": 97.75280898876404,
+   "first_seen_step": 0,
+   "rejected_by_gate": 2,
+   "per_photo_map_err_median_cm": 3.884800968979077,
+   "per_photo_map_err_p90_cm": 8.213787772019188,
+   "per_photo_map_err_max_cm": 12.071877155250188,
+   "per_photo_rel_err_median_cm": 2.945241209134416,
+   "per_photo_rot_err_median_deg": 1.845356926845652,
+   "per_photo_rot_fail_pct": 2.1739130434782608,
+   "placement_spread_rms_cm": 4.755443660203404,
+   "fused_final_err_cm": 0.7486659978364433,
+   "fused_final_rot_deg": 0.8321994727059421,
+   "fused_max_err_after_10_photos_cm": 2.5158375103703627,
+   "closest_approach_m": 0.5878585158412608
+  },
+  "other_runs": [
+   {
+    "photos": 320,
+    "photos_cube_in_frame": 92,
+    "photos_cube_fully_in_frame": 80,
+    "photos_cube_detected": 80,
+    "detected_pct_of_in_frame": 86.95652173913044,
+    "detected_pct_of_fully_in_frame": 92.5,
+    "first_seen_step": 53,
+    "rejected_by_gate": 6,
+    "per_photo_map_err_median_cm": 3.188919188784969,
+    "per_photo_map_err_p90_cm": 6.9689225245000985,
+    "per_photo_map_err_max_cm": 14.41792017873102,
+    "per_photo_rel_err_median_cm": 1.9717196323223547,
+    "per_photo_rot_err_median_deg": 1.82992859891179,
+    "per_photo_rot_fail_pct": 8.75,
+    "placement_spread_rms_cm": 4.711299550406105,
+    "fused_final_err_cm": 0.305046698479635,
+    "fused_final_rot_deg": 0.31626528337311954,
+    "fused_max_err_after_10_photos_cm": 4.481336736254199,
+    "closest_approach_m": 0.5340426658059928
+   },
+   {
+    "photos": 320,
+    "photos_cube_in_frame": 99,
+    "photos_cube_fully_in_frame": 90,
+    "photos_cube_detected": 90,
+    "detected_pct_of_in_frame": 90.9090909090909,
+    "detected_pct_of_fully_in_frame": 95.55555555555556,
+    "first_seen_step": 0,
+    "rejected_by_gate": 18,
+    "per_photo_map_err_median_cm": 2.5256508615528674,
+    "per_photo_map_err_p90_cm": 7.740866870547331,
+    "per_photo_map_err_max_cm": 13.216229191198348,
+    "per_photo_rel_err_median_cm": 2.4760767751152777,
+    "per_photo_rot_err_median_deg": 2.3925614686373766,
+    "per_photo_rot_fail_pct": 8.88888888888889,
+    "placement_spread_rms_cm": 3.758532940462699,
+    "fused_final_err_cm": 0.9658595995224655,
+    "fused_final_rot_deg": 2.4583745660651606,
+    "fused_max_err_after_10_photos_cm": 7.825564894179419,
+    "closest_approach_m": 0.6932032805900634
+   },
+   {
+    "photos": 320,
+    "photos_cube_in_frame": 82,
+    "photos_cube_fully_in_frame": 72,
+    "photos_cube_detected": 78,
+    "detected_pct_of_in_frame": 95.1219512195122,
+    "detected_pct_of_fully_in_frame": 100.0,
+    "first_seen_step": 54,
+    "rejected_by_gate": 7,
+    "per_photo_map_err_median_cm": 4.794090834697081,
+    "per_photo_map_err_p90_cm": 11.142702133409701,
+    "per_photo_map_err_max_cm": 23.27669722990015,
+    "per_photo_rel_err_median_cm": 2.964865366197768,
+    "per_photo_rot_err_median_deg": 2.7980329974937055,
+    "per_photo_rot_fail_pct": 2.564102564102564,
+    "placement_spread_rms_cm": 5.331949015888231,
+    "fused_final_err_cm": 0.8312729384470647,
+    "fused_final_rot_deg": 0.054232607236634464,
+    "fused_max_err_after_10_photos_cm": 4.774371840916516,
+    "closest_approach_m": 0.6662514035003132
+   },
+   {
+    "photos": 320,
+    "photos_cube_in_frame": 85,
+    "photos_cube_fully_in_frame": 75,
+    "photos_cube_detected": 79,
+    "detected_pct_of_in_frame": 92.94117647058823,
+    "detected_pct_of_fully_in_frame": 98.66666666666667,
+    "first_seen_step": 53,
+    "rejected_by_gate": 7,
+    "per_photo_map_err_median_cm": 3.010112257801831,
+    "per_photo_map_err_p90_cm": 8.993310545898463,
+    "per_photo_map_err_max_cm": 16.653465302528474,
+    "per_photo_rel_err_median_cm": 2.203841211782612,
+    "per_photo_rot_err_median_deg": 1.4535585918974134,
+    "per_photo_rot_fail_pct": 8.860759493670885,
+    "placement_spread_rms_cm": 4.4910853196612575,
+    "fused_final_err_cm": 0.4325008976491001,
+    "fused_final_rot_deg": 0.32591010095369055,
+    "fused_max_err_after_10_photos_cm": 2.5018985345829665,
+    "closest_approach_m": 0.6482541473295779
+   },
+   {
+    "photos": 320,
+    "photos_cube_in_frame": 86,
+    "photos_cube_fully_in_frame": 74,
+    "photos_cube_detected": 75,
+    "detected_pct_of_in_frame": 87.20930232558139,
+    "detected_pct_of_fully_in_frame": 100.0,
+    "first_seen_step": 53,
+    "rejected_by_gate": 3,
+    "per_photo_map_err_median_cm": 2.795634668076563,
+    "per_photo_map_err_p90_cm": 6.8058959550413425,
+    "per_photo_map_err_max_cm": 12.09802916253173,
+    "per_photo_rel_err_median_cm": 2.0751954041799308,
+    "per_photo_rot_err_median_deg": 1.6966620189473736,
+    "per_photo_rot_fail_pct": 8.0,
+    "placement_spread_rms_cm": 3.887542179705922,
+    "fused_final_err_cm": 0.41619086352762125,
+    "fused_final_rot_deg": 1.1281091589862045,
+    "fused_max_err_after_10_photos_cm": 1.7501622004987487,
+    "closest_approach_m": 0.6737233749443748
+   },
+   {
+    "photos": 320,
+    "photos_cube_in_frame": 96,
+    "photos_cube_fully_in_frame": 86,
+    "photos_cube_detected": 88,
+    "detected_pct_of_in_frame": 91.66666666666666,
+    "detected_pct_of_fully_in_frame": 97.67441860465115,
+    "first_seen_step": 0,
+    "rejected_by_gate": 1,
+    "per_photo_map_err_median_cm": 3.6802520679561948,
+    "per_photo_map_err_p90_cm": 7.265190881717267,
+    "per_photo_map_err_max_cm": 11.645924847054374,
+    "per_photo_rel_err_median_cm": 2.9697217218068013,
+    "per_photo_rot_err_median_deg": 2.0487821603084173,
+    "per_photo_rot_fail_pct": 2.272727272727273,
+    "placement_spread_rms_cm": 4.498419863784219,
+    "fused_final_err_cm": 0.8846120460900747,
+    "fused_final_rot_deg": 0.4147426705331429,
+    "fused_max_err_after_10_photos_cm": 1.9475819184823433,
+    "closest_approach_m": 0.6028526978291994
+   },
+   {
+    "photos": 320,
+    "photos_cube_in_frame": 106,
+    "photos_cube_fully_in_frame": 99,
+    "photos_cube_detected": 102,
+    "detected_pct_of_in_frame": 96.22641509433963,
+    "detected_pct_of_fully_in_frame": 98.98989898989899,
+    "first_seen_step": 0,
+    "rejected_by_gate": 5,
+    "per_photo_map_err_median_cm": 3.689141116436552,
+    "per_photo_map_err_p90_cm": 7.6422773988938415,
+    "per_photo_map_err_max_cm": 12.4091345844373,
+    "per_photo_rel_err_median_cm": 3.005331417456375,
+    "per_photo_rot_err_median_deg": 1.9810082902396726,
+    "per_photo_rot_fail_pct": 4.901960784313726,
+    "placement_spread_rms_cm": 4.385016407861708,
+    "fused_final_err_cm": 2.384470995039314,
+    "fused_final_rot_deg": 0.6580876918974772,
+    "fused_max_err_after_10_photos_cm": 3.1631815970171497,
+    "closest_approach_m": 0.5223511038480518
+   }
+  ]
+ }
+}

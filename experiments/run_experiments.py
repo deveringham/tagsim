@@ -1,7 +1,8 @@
 """
 run_experiments.py - accuracy experiments for tagsim.py
 
-  python3 run_experiments.py [output_dir]
+  python3 -m experiments.run_experiments [output_dir]    (from the repo root;
+                                    default output: results/localization)
 
 A. Monte Carlo over random robot poses in a 4 x 3 m arena under realistic
    conditions (blur, noise, JPEG, body bobbing, 1 cm / 1 deg tag-placement
@@ -20,8 +21,9 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter, LogLocator
 from tagsim import *
+from nav import motion, Motors, OdometryEKF, fix_cov
 
-OUT = "results"          # set from the command line in __main__
+OUT = "results/localization"  # set from the command line in __main__
 
 # Chart styling (reference data-viz palette, light mode)
 INK, INK2, MUTED, GRID, AXIS, SURF = ("#0b0b0b", "#52514e", "#898781",
@@ -55,8 +57,10 @@ def random_pose(rng, W, D, margin=0.3):
 
 
 def realistic_setup(rng, tag_size=0.15, spacing=0.75, map_pos=0.01,
-                    map_yaw=1.0, f_err=0.01, c_err=3.0, cam=None):
-    tags, (W, D) = make_arena(tag_size=tag_size, spacing=spacing)
+                    map_yaw=1.0, f_err=0.01, c_err=3.0, cam=None,
+                    room=(4.0, 3.0), tag_height=0.20):
+    tags, (W, D) = make_arena(room[0], room[1], tag_size=tag_size,
+                              tag_height=tag_height, spacing=spacing)
     cam = cam or Camera()
     map_tags = perturb_map(tags, rng, map_pos, map_yaw) if map_pos > 0 else None
     K_est = perturb_intrinsics(cam.K, rng, f_err, c_err)
@@ -180,18 +184,24 @@ def experiment_B(N=300):
 # ---------------------------------------------------------------------------
 # C. Trajectory: bad odometry + tag fixes in an EKF
 # ---------------------------------------------------------------------------
-def motion(x, fwd, turn):
-    """Turn-then-walk motion model used for truth, dead reckoning and EKF."""
-    th = x[2] + turn
-    return np.array([x[0] + fwd * np.cos(th), x[1] + fwd * np.sin(th),
-                     wrap(th)])
-
-
-def simulate_run(steps=240, on_step=None, seed=5):
+def simulate_run(steps=240, on_step=None, seed=5, cube=None, waypoints=None,
+                 look_at_cube=False, motors=None, calibrate=False, drift_seed=None):
     """Walk the robot round a waypoint loop with badly-calibrated motors.
+
+    motors    : the robot's true motor behaviour (default Motors(): 18 % short
+                steps, 10 % under-turn, 1.5 deg/step curve, no drift).  It is
+                copied, so drift inside the run never leaks out.
+    calibrate : the EKF also learns s, k, c online (nav.OdometryEKF).
+    drift_seed: seed for the motors' drift (default: seed + 1000).
 
     Each step: plan a command from the fused estimate, move (truth, dead
     reckoning, EKF prediction), stop, take a photo, fuse any tag fix.
+
+    With a cube: every photo that shows it places the cube on the map
+    (floor-constrained relative pose composed with the fused robot pose)
+    and a CubeTracker fuses those placements.  With look_at_cube, once the
+    cube has been seen the robot turns to face it at every waypoint and
+    takes a few photos before walking on.
 
     on_step(info) is called after every step with a dict holding the
     states before/after the step, the photo, detections and the fix.
@@ -205,18 +215,28 @@ def simulate_run(steps=240, on_step=None, seed=5):
     # Standing still for the photo: little bobbing, no motion blur.
     deg = Degradation(bob_pitch_deg=0.7, bob_roll_deg=0.5, bob_dz_m=0.002)
 
-    # This robot's (unknown) motor personality: walks 18 % short, curves
-    # left, and every step has random slip.
-    SCALE, CURVE = 0.82, np.radians(1.5)
+    # This robot's (unknown) motor personality.
+    motors = Motors(**vars(motors)) if motors is not None else Motors()
+    drift_rng = np.random.default_rng(seed + 1000 if drift_seed is None
+                                      else drift_seed)
 
-    waypoints = [(3.3, 0.7), (3.3, 2.3), (0.7, 2.3), (0.7, 0.7)] * 3
+    waypoints = waypoints or [(3.3, 0.7), (3.3, 2.3), (0.7, 2.3), (0.7, 0.7)]
     x_true = np.array([0.7, 0.7, 0.0])
     x_dr = x_true.copy()
-    x_kf, P = x_true.copy(), np.diag([1e-4, 1e-4, 1e-4])
+    ekf = OdometryEKF(x_true, calibrate=calibrate)
+    x_kf = ekf.pose.copy()
     wp = 0
-    log = {"true": [], "dr": [], "kf": [], "fix": [], "n_tags": []}
+    log = {"true": [], "dr": [], "kf": [], "fix": [], "n_tags": [],
+           "bias_true": [], "bias_est": [], "bias_sd": []}
     ctx = {"tags": tags, "map_tags": map_tags, "cam": cam, "K_est": K_est,
-           "W": W, "D": D, "steps": steps, "start": x_true.copy()}
+           "W": W, "D": D, "steps": steps, "start": x_true.copy(), "cube": cube}
+    if cube is not None:
+        tracker, look_left = CubeTracker(), 0
+        ctx["cube_tracker"] = tracker
+        for key in ("cube_in_frame", "cube_faces", "cube_dist", "cube_T",
+                    "cube_accepted",
+                    "cube_err_world", "cube_err_rel", "cube_err_fused"):
+            log[key] = []
 
     for k in range(steps):
         prev = {"true": x_true.copy(), "dr": x_dr.copy(), "kf": x_kf.copy()}
@@ -225,55 +245,71 @@ def simulate_run(steps=240, on_step=None, seed=5):
         if np.hypot(tx - x_kf[0], ty - x_kf[1]) < 0.15:
             wp += 1
             tx, ty = waypoints[wp % len(waypoints)]
-        bearing = wrap(np.arctan2(ty - x_kf[1], tx - x_kf[0]) - x_kf[2])
-        turn = np.clip(bearing, -np.radians(30), np.radians(30))
-        fwd = 0.10 if abs(bearing) < np.radians(30) else 0.0
+            if look_at_cube and tracker.T is not None:
+                look_left = 3
+        if look_at_cube and look_left > 0:
+            # Turn on the spot towards where the cube is believed to be.
+            cx, cy = tracker.T[:2, 3]
+            bearing = wrap(np.arctan2(cy - x_kf[1], cx - x_kf[0]) - x_kf[2])
+            turn = np.clip(bearing, -np.radians(30), np.radians(30))
+            fwd = 0.0
+            if abs(bearing) < np.radians(8):
+                look_left -= 1
+        else:
+            bearing = wrap(np.arctan2(ty - x_kf[1], tx - x_kf[0]) - x_kf[2])
+            turn = np.clip(bearing, -np.radians(30), np.radians(30))
+            fwd = 0.10 if abs(bearing) < np.radians(30) else 0.0
 
         # Truth: what the motors actually do.
-        x_true = motion(x_true, fwd * SCALE * (1 + rng.normal(0, 0.08)),
-                        turn * 0.9 + CURVE * (fwd > 0) + rng.normal(0, np.radians(2)))
+        x_true = motors.move(x_true, fwd, turn, rng, drift_rng)
         x_true[:2] = np.clip(x_true[:2], 0.25, [W - 0.25, D - 0.25])
 
         # Dead reckoning: integrate commands only.
         x_dr = motion(x_dr, fwd, turn)
-        # EKF predict.
-        Fj = np.array([[1, 0, -fwd * np.sin(x_kf[2] + turn)],
-                       [0, 1, fwd * np.cos(x_kf[2] + turn)], [0, 0, 1]])
-        x_kf = motion(x_kf, fwd, turn)
-        Q = np.diag([(0.25 * fwd) ** 2 + 1e-6, (0.25 * fwd) ** 2 + 1e-6,
-                     np.radians(4) ** 2])
-        P = Fj @ P @ Fj.T + Q
-        kf_pred = x_kf.copy()
+        ekf.predict(fwd, turn)
+        kf_pred = ekf.pose.copy()
 
         # Photo + tag measurement.
         r, img, dets = measure(tuple(x_true), tags, cam, deg, rng, detector=det,
-                               K_est=K_est, map_tags=map_tags, return_image=True)
-        got = False
-        if r.n_tags > 0:
-            z = np.array(r.est["floor"])
-            sd = 0.01 + 0.012 * r.nearest_dist        # trust nearby tags more
-            Rm = np.diag([sd ** 2, sd ** 2, np.radians(0.3 + 0.5 * r.nearest_dist) ** 2])
-            y = z - x_kf
-            y[2] = wrap(y[2])
-            S = P + Rm
-            if y @ np.linalg.solve(S, y) < 16.0:      # reject gross outliers
-                Kg = P @ np.linalg.inv(S)
-                x_kf = x_kf + Kg @ y
-                x_kf[2] = wrap(x_kf[2])
-                P = (np.eye(3) - Kg) @ P
-                got = True
+                               K_est=K_est, map_tags=map_tags, return_image=True,
+                               cube=cube)
+        got = r.n_tags > 0 and ekf.update(np.array(r.est["floor"]),
+                                          fix_cov(r.nearest_dist))
+        x_kf = ekf.pose.copy()
         for key, v in (("true", x_true), ("dr", x_dr), ("kf", x_kf)):
             log[key].append(v.copy())
         log["fix"].append(got)
         log["n_tags"].append(r.n_tags)
+        log["bias_true"].append(motors.biases)
+        log["bias_est"].append(ekf.biases.copy())
+        log["bias_sd"].append(np.sqrt(np.diag(ekf.P)[3:]) if calibrate
+                              else np.zeros(3))
+        if cube is not None:
+            T_cube, accepted = None, False
+            if r.cube_faces:
+                T_rel = r.cube_rel["floor"]
+                T_cube = robot_T(*x_kf) @ T_rel
+                accepted = tracker.add(T_cube, np.linalg.norm(T_rel[:2, 3]))
+            nan2 = (np.nan, np.nan)
+            log["cube_in_frame"].append(r.cube_in_frame)
+            log["cube_faces"].append(r.cube_faces)
+            log["cube_dist"].append(r.cube_dist)
+            log["cube_T"].append(T_cube)
+            log["cube_accepted"].append(accepted)
+            log["cube_err_world"].append(
+                cube_error(T_cube, cube.T) if T_cube is not None else nan2)
+            log["cube_err_rel"].append(r.cube_err_rel.get("floor", nan2))
+            log["cube_err_fused"].append(
+                cube_error(tracker.T, cube.T) if tracker.T is not None else nan2)
         if on_step is not None:
             on_step({"k": k, "prev": prev, "kf_pred": kf_pred,
                      "new": {"true": x_true.copy(), "dr": x_dr.copy(),
                              "kf": x_kf.copy()},
                      "cmd": (fwd, turn), "image": img, "dets": dets,
-                     "result": r, "fix": got, "waypoint": (tx, ty)})
+                     "result": r, "fix": got, "waypoint": (tx, ty),
+                     "cube_fused": tracker.T if cube is not None else None})
 
-    log = {k: np.array(v) for k, v in log.items()}
+    log = {k: v if k == "cube_T" else np.array(v) for k, v in log.items()}
     return log, ctx
 
 
@@ -327,7 +363,7 @@ def experiment_C(steps=240):
 
 
 if __name__ == "__main__":
-    OUT = sys.argv[1] if len(sys.argv) > 1 else "results"
+    OUT = sys.argv[1] if len(sys.argv) > 1 else "results/localization"
     os.makedirs(OUT, exist_ok=True)
     t0 = time.time()
     example_frame()

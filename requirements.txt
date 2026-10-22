@@ -1,0 +1,6 @@
+# Tested with numpy 2.5.4, scipy 1.18.1, matplotlib 3.11.2, OpenCV 5.0.0.
+numpy
+scipy
+matplotlib
+# Needs cv2.aruco with the ArucoDetector API (OpenCV >= 4.7).
+opencv-contrib-python-headless>=4.7
